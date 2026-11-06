@@ -1,0 +1,18 @@
+// Shared settings. Override the Cargo binary with: xcodebuild ... KEYLOOM_CARGO=/path/to/cargo
+SDKROOT = macosx
+MACOSX_DEPLOYMENT_TARGET = 26.0
+ARCHS = arm64
+ONLY_ACTIVE_ARCH = NO
+SWIFT_VERSION = 6.0
+SWIFT_TREAT_WARNINGS_AS_ERRORS = YES
+GCC_TREAT_WARNINGS_AS_ERRORS = YES
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+KEYLOOM_CARGO = cargo
+
+// Rust static library produced by the KeyloomCore target.
+LIBRARY_SEARCH_PATHS = $(PROJECT_DIR)/target/$(KEYLOOM_CARGO_OUT)
+OTHER_LDFLAGS = -lkeyloom_core
+SWIFT_OBJC_BRIDGING_HEADER = Core/include/keyloom_core.h

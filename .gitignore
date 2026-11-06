@@ -1,0 +1,13 @@
+.DS_Store
+# Rust
+/target/
+# Xcode
+DerivedData/
+/.derived/
+*.xcresult
+xcuserdata/
+*.xcuserstate
+# Evidence artifacts
+screenshots/
+traces/
+test-results/
