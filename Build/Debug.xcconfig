@@ -1,4 +1,1 @@
 #include "Base.xcconfig"
-
-KEYLOOM_CARGO_PROFILE = dev
-KEYLOOM_CARGO_OUT = debug

@@ -1,6 +1,4 @@
 .DS_Store
-# Rust
-/target/
 # Xcode
 DerivedData/
 /.derived/

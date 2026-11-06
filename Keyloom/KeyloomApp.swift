@@ -4,7 +4,7 @@ import SwiftUI
 struct KeyloomApp: App {
     var body: some Scene {
         WindowGroup {
-            Text("Keyloom core ABI \(KeyloomCore.abiVersion)")
+            Text(AppIdentity.name)
                 .padding()
         }
     }

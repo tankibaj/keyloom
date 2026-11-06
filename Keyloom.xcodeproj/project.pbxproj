@@ -8,38 +8,50 @@
 
 /* Begin PBXBuildFile section */
 		7A0000000000000000000001 /* KeyloomApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000011 /* KeyloomApp.swift */; };
-		7A0000000000000000000002 /* KeyloomCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000012 /* KeyloomCore.swift */; };
-		7A0000000000000000000003 /* KeyloomCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000012 /* KeyloomCore.swift */; };
-		7A0000000000000000000004 /* KeyloomCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000014 /* KeyloomCoreTests.swift */; };
+		7A0000000000000000000002 /* AppIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000012 /* AppIdentity.swift */; };
+		7A0000000000000000000003 /* AppIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000012 /* AppIdentity.swift */; };
+		7A0000000000000000000004 /* AppIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000014 /* AppIdentityTests.swift */; };
+		7A0000000000000000000201 /* ProbeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000107 /* ProbeApp.swift */; };
+		7A0000000000000000000202 /* Recognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000101 /* Recognizer.swift */; };
+		7A0000000000000000000203 /* Engine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000102 /* Engine.swift */; };
+		7A0000000000000000000204 /* Pasteboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000103 /* Pasteboard.swift */; };
+		7A0000000000000000000205 /* Destination.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000104 /* Destination.swift */; };
+		7A0000000000000000000206 /* EventTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000105 /* EventTap.swift */; };
+		7A0000000000000000000207 /* CloudProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000106 /* CloudProbe.swift */; };
+		7A0000000000000000000208 /* Recognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000101 /* Recognizer.swift */; };
+		7A0000000000000000000209 /* Engine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000102 /* Engine.swift */; };
+		7A000000000000000000020A /* Pasteboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000103 /* Pasteboard.swift */; };
+		7A000000000000000000020B /* Destination.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000104 /* Destination.swift */; };
+		7A000000000000000000020C /* EventTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000105 /* EventTap.swift */; };
+		7A000000000000000000020D /* CloudProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000106 /* CloudProbe.swift */; };
+		7A000000000000000000020E /* Fakes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000108 /* Fakes.swift */; };
+		7A000000000000000000020F /* RecognizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0000000000000000000109 /* RecognizerTests.swift */; };
+		7A0000000000000000000210 /* EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A000000000000000000010A /* EngineTests.swift */; };
+		7A0000000000000000000211 /* CloudProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A000000000000000000010B /* CloudProbeTests.swift */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		7A0000000000000000000021 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 7A0000000000000000000090 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 7A0000000000000000000053;
-			remoteInfo = KeyloomCore;
-		};
-		7A0000000000000000000022 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 7A0000000000000000000090 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 7A0000000000000000000053;
-			remoteInfo = KeyloomCore;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		7A0000000000000000000011 /* KeyloomApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyloomApp.swift; sourceTree = "<group>"; };
-		7A0000000000000000000012 /* KeyloomCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyloomCore.swift; sourceTree = "<group>"; };
-		7A0000000000000000000013 /* keyloom_core.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = keyloom_core.h; sourceTree = "<group>"; };
-		7A0000000000000000000014 /* KeyloomCoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyloomCoreTests.swift; sourceTree = "<group>"; };
+		7A0000000000000000000012 /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
+		7A0000000000000000000014 /* AppIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentityTests.swift; sourceTree = "<group>"; };
 		7A0000000000000000000015 /* Keyloom.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Keyloom.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A0000000000000000000016 /* KeyloomTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeyloomTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A0000000000000000000017 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		7A0000000000000000000018 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		7A0000000000000000000019 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		7A0000000000000000000101 /* Recognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recognizer.swift; sourceTree = "<group>"; };
+		7A0000000000000000000102 /* Engine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine.swift; sourceTree = "<group>"; };
+		7A0000000000000000000103 /* Pasteboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pasteboard.swift; sourceTree = "<group>"; };
+		7A0000000000000000000104 /* Destination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Destination.swift; sourceTree = "<group>"; };
+		7A0000000000000000000105 /* EventTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventTap.swift; sourceTree = "<group>"; };
+		7A0000000000000000000106 /* CloudProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudProbe.swift; sourceTree = "<group>"; };
+		7A0000000000000000000107 /* ProbeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProbeApp.swift; sourceTree = "<group>"; };
+		7A0000000000000000000108 /* Fakes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fakes.swift; sourceTree = "<group>"; };
+		7A0000000000000000000109 /* RecognizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecognizerTests.swift; sourceTree = "<group>"; };
+		7A000000000000000000010A /* EngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineTests.swift; sourceTree = "<group>"; };
+		7A000000000000000000010B /* CloudProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudProbeTests.swift; sourceTree = "<group>"; };
+		7A000000000000000000010D /* KeyloomProbe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KeyloomProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A000000000000000000010E /* KeyloomProbeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeyloomProbeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,6 +69,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A0000000000000000000302 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A0000000000000000000304 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -65,8 +91,8 @@
 			children = (
 				7A0000000000000000000041 /* Keyloom */,
 				7A0000000000000000000042 /* KeyloomTests */,
-				7A0000000000000000000043 /* Core */,
 				7A0000000000000000000044 /* Build */,
+				7A0000000000000000000401 /* Feasibility */,
 				7A0000000000000000000045 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -75,7 +101,7 @@
 			isa = PBXGroup;
 			children = (
 				7A0000000000000000000011 /* KeyloomApp.swift */,
-				7A0000000000000000000012 /* KeyloomCore.swift */,
+				7A0000000000000000000012 /* AppIdentity.swift */,
 			);
 			path = Keyloom;
 			sourceTree = "<group>";
@@ -83,25 +109,9 @@
 		7A0000000000000000000042 /* KeyloomTests */ = {
 			isa = PBXGroup;
 			children = (
-				7A0000000000000000000014 /* KeyloomCoreTests.swift */,
+				7A0000000000000000000014 /* AppIdentityTests.swift */,
 			);
 			path = KeyloomTests;
-			sourceTree = "<group>";
-		};
-		7A0000000000000000000043 /* Core */ = {
-			isa = PBXGroup;
-			children = (
-				7A0000000000000000000046 /* include */,
-			);
-			path = Core;
-			sourceTree = "<group>";
-		};
-		7A0000000000000000000046 /* include */ = {
-			isa = PBXGroup;
-			children = (
-				7A0000000000000000000013 /* keyloom_core.h */,
-			);
-			path = include;
 			sourceTree = "<group>";
 		};
 		7A0000000000000000000044 /* Build */ = {
@@ -114,33 +124,52 @@
 			path = Build;
 			sourceTree = "<group>";
 		};
+		7A0000000000000000000401 /* Feasibility */ = {
+			isa = PBXGroup;
+			children = (
+				7A0000000000000000000402 /* Probe */,
+				7A0000000000000000000403 /* ProbeTests */,
+			);
+			path = Feasibility;
+			sourceTree = "<group>";
+		};
+		7A0000000000000000000402 /* Probe */ = {
+			isa = PBXGroup;
+			children = (
+				7A0000000000000000000107 /* ProbeApp.swift */,
+				7A0000000000000000000101 /* Recognizer.swift */,
+				7A0000000000000000000102 /* Engine.swift */,
+				7A0000000000000000000103 /* Pasteboard.swift */,
+				7A0000000000000000000104 /* Destination.swift */,
+				7A0000000000000000000105 /* EventTap.swift */,
+				7A0000000000000000000106 /* CloudProbe.swift */,
+			);
+			path = Probe;
+			sourceTree = "<group>";
+		};
+		7A0000000000000000000403 /* ProbeTests */ = {
+			isa = PBXGroup;
+			children = (
+				7A0000000000000000000108 /* Fakes.swift */,
+				7A0000000000000000000109 /* RecognizerTests.swift */,
+				7A000000000000000000010A /* EngineTests.swift */,
+				7A000000000000000000010B /* CloudProbeTests.swift */,
+			);
+			path = ProbeTests;
+			sourceTree = "<group>";
+		};
 		7A0000000000000000000045 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				7A0000000000000000000015 /* Keyloom.app */,
 				7A0000000000000000000016 /* KeyloomTests.xctest */,
+				7A000000000000000000010D /* KeyloomProbe.app */,
+				7A000000000000000000010E /* KeyloomProbeTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
-
-/* Begin PBXLegacyTarget section */
-		7A0000000000000000000053 /* KeyloomCore */ = {
-			isa = PBXLegacyTarget;
-			buildArgumentsString = "MACOSX_DEPLOYMENT_TARGET=$(MACOSX_DEPLOYMENT_TARGET) $(KEYLOOM_CARGO) build --locked --profile $(KEYLOOM_CARGO_PROFILE) --package keyloom-core";
-			buildConfigurationList = 7A0000000000000000000073 /* Build configuration list for PBXLegacyTarget "KeyloomCore" */;
-			buildPhases = (
-			);
-			buildToolPath = /usr/bin/env;
-			buildWorkingDirectory = "$(PROJECT_DIR)";
-			dependencies = (
-			);
-			name = KeyloomCore;
-			passBuildSettingsInEnvironment = 0;
-			productName = KeyloomCore;
-		};
-/* End PBXLegacyTarget section */
 
 /* Begin PBXNativeTarget section */
 		7A0000000000000000000051 /* Keyloom */ = {
@@ -153,7 +182,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				7A0000000000000000000023 /* PBXTargetDependency */,
 			);
 			name = Keyloom;
 			productName = Keyloom;
@@ -170,11 +198,42 @@
 			buildRules = (
 			);
 			dependencies = (
-				7A0000000000000000000024 /* PBXTargetDependency */,
 			);
 			name = KeyloomTests;
 			productName = KeyloomTests;
 			productReference = 7A0000000000000000000016 /* KeyloomTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		7A0000000000000000000501 /* KeyloomProbe */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A0000000000000000000701 /* Build configuration list for PBXNativeTarget "KeyloomProbe" */;
+			buildPhases = (
+				7A0000000000000000000301 /* Sources */,
+				7A0000000000000000000302 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KeyloomProbe;
+			productName = KeyloomProbe;
+			productReference = 7A000000000000000000010D /* KeyloomProbe.app */;
+			productType = "com.apple.product-type.application";
+		};
+		7A0000000000000000000502 /* KeyloomProbeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A0000000000000000000702 /* Build configuration list for PBXNativeTarget "KeyloomProbeTests" */;
+			buildPhases = (
+				7A0000000000000000000303 /* Sources */,
+				7A0000000000000000000304 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KeyloomProbeTests;
+			productName = KeyloomProbeTests;
+			productReference = 7A000000000000000000010E /* KeyloomProbeTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -200,9 +259,10 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				7A0000000000000000000053 /* KeyloomCore */,
 				7A0000000000000000000051 /* Keyloom */,
 				7A0000000000000000000052 /* KeyloomTests */,
+				7A0000000000000000000501 /* KeyloomProbe */,
+				7A0000000000000000000502 /* KeyloomProbeTests */,
 			);
 		};
 /* End PBXProject section */
@@ -213,7 +273,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7A0000000000000000000001 /* KeyloomApp.swift in Sources */,
-				7A0000000000000000000002 /* KeyloomCore.swift in Sources */,
+				7A0000000000000000000002 /* AppIdentity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -221,25 +281,43 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7A0000000000000000000003 /* KeyloomCore.swift in Sources */,
-				7A0000000000000000000004 /* KeyloomCoreTests.swift in Sources */,
+				7A0000000000000000000003 /* AppIdentity.swift in Sources */,
+				7A0000000000000000000004 /* AppIdentityTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A0000000000000000000301 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A0000000000000000000201 /* ProbeApp.swift in Sources */,
+				7A0000000000000000000202 /* Recognizer.swift in Sources */,
+				7A0000000000000000000203 /* Engine.swift in Sources */,
+				7A0000000000000000000204 /* Pasteboard.swift in Sources */,
+				7A0000000000000000000205 /* Destination.swift in Sources */,
+				7A0000000000000000000206 /* EventTap.swift in Sources */,
+				7A0000000000000000000207 /* CloudProbe.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A0000000000000000000303 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A0000000000000000000208 /* Recognizer.swift in Sources */,
+				7A0000000000000000000209 /* Engine.swift in Sources */,
+				7A000000000000000000020A /* Pasteboard.swift in Sources */,
+				7A000000000000000000020B /* Destination.swift in Sources */,
+				7A000000000000000000020C /* EventTap.swift in Sources */,
+				7A000000000000000000020D /* CloudProbe.swift in Sources */,
+				7A000000000000000000020E /* Fakes.swift in Sources */,
+				7A000000000000000000020F /* RecognizerTests.swift in Sources */,
+				7A0000000000000000000210 /* EngineTests.swift in Sources */,
+				7A0000000000000000000211 /* CloudProbeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		7A0000000000000000000023 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 7A0000000000000000000053 /* KeyloomCore */;
-			targetProxy = 7A0000000000000000000021 /* PBXContainerItemProxy */;
-		};
-		7A0000000000000000000024 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 7A0000000000000000000053 /* KeyloomCore */;
-			targetProxy = 7A0000000000000000000022 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		7A0000000000000000000081 /* Debug */ = {
@@ -300,17 +378,53 @@
 			};
 			name = Release;
 		};
-		7A0000000000000000000087 /* Debug */ = {
+		7A0000000000000000000801 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Keyloom Probe";
+				MARKETING_VERSION = 0.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomProbe;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
-		7A0000000000000000000088 /* Release */ = {
+		7A0000000000000000000802 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Keyloom Probe";
+				MARKETING_VERSION = 0.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomProbe;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		7A0000000000000000000803 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomProbeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		7A0000000000000000000804 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomProbeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -344,11 +458,20 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		7A0000000000000000000073 /* Build configuration list for PBXLegacyTarget "KeyloomCore" */ = {
+		7A0000000000000000000701 /* Build configuration list for PBXNativeTarget "KeyloomProbe" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7A0000000000000000000087 /* Debug */,
-				7A0000000000000000000088 /* Release */,
+				7A0000000000000000000801 /* Debug */,
+				7A0000000000000000000802 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7A0000000000000000000702 /* Build configuration list for PBXNativeTarget "KeyloomProbeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A0000000000000000000803 /* Debug */,
+				7A0000000000000000000804 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -1,4 +1,1 @@
 #include "Base.xcconfig"
-
-KEYLOOM_CARGO_PROFILE = release
-KEYLOOM_CARGO_OUT = release
