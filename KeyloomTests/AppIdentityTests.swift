@@ -1,4 +1,5 @@
 import XCTest
+@testable import Keyloom
 
 final class AppIdentityTests: XCTestCase {
     func testAppIdentityMatchesTheReleaseBaseline() {
