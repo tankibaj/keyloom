@@ -8,6 +8,10 @@ struct SettingsView: View {
     /// Why the launch-time daily snapshot failed, if it did.
     var snapshotError: String?
 
+    /// Roomy by default, resizable down to a size where every tab still reads without clipping.
+    static let defaultSize = CGSize(width: 720, height: 560)
+    static let minimumSize = CGSize(width: 640, height: 480)
+
     var body: some View {
         if let settings {
             TabView {
@@ -24,9 +28,48 @@ struct SettingsView: View {
                     WritingAssistanceSettingsView(model: settings.assistance)
                 }
             }
-            .frame(width: 560)
+            .frame(minWidth: Self.minimumSize.width, idealWidth: Self.defaultSize.width,
+                   minHeight: Self.minimumSize.height, idealHeight: Self.defaultSize.height)
+            .background(ResizableWindow(minimum: Self.minimumSize))
         } else {
-            ProgressView("Starting…").padding(40).frame(width: 560)
+            ProgressView("Starting…").padding(40).frame(width: Self.defaultSize.width)
+        }
+    }
+}
+
+/// SwiftUI builds the Settings window without the resizable style, whatever the scene's resizability says. This
+/// adds it back, with the content's minimum size, once the view is in its window.
+private struct ResizableWindow: NSViewRepresentable {
+    let minimum: CGSize
+
+    func makeNSView(context: Context) -> NSView { Probe(minimum: minimum) }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class Probe: NSView {
+        let minimum: CGSize
+        private var observer: (any NSObjectProtocol)?
+
+        init(minimum: CGSize) {
+            self.minimum = minimum
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { nil }
+
+        override func viewDidMoveToWindow() {
+            observer.map(NotificationCenter.default.removeObserver)
+            observer = nil
+            guard let window else { return }
+            // SwiftUI configures the window after the view arrives and again when it becomes key: apply on both.
+            observer = NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.apply() }
+            }
+            DispatchQueue.main.async { [weak self] in self?.apply() }
+        }
+
+        private func apply() {
+            guard let window else { return }
+            window.styleMask.insert(.resizable)
+            window.contentMinSize = minimum
         }
     }
 }

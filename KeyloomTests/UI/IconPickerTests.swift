@@ -54,7 +54,7 @@ final class SymbolCatalogTests: XCTestCase {
         XCTAssertEqual(SymbolEntry(name: "person.crop.circle.fill", keywords: ["x"]).label, "person crop circle fill")
         XCTAssertEqual(SnippetIcon.symbol("text.bubble", color: .blue).spoken, "text bubble, blue")
         XCTAssertEqual(SnippetIcon.symbol("text.bubble").spoken, "text bubble")
-        XCTAssertEqual(SnippetIcon.emoji("👋").spoken, "👋")
+        XCTAssertEqual(SnippetIcon.emoji("👋").spoken, SnippetIcon.symbol(IconPickerModel.fallbackSymbol).spoken, "an emoji icon reads as the fallback symbol it is drawn as")
     }
 }
 
@@ -95,9 +95,7 @@ final class IconColorPaletteTests: XCTestCase {
 }
 
 final class IconPickerModelTests: XCTestCase {
-    func testItOpensOnTheKindOfTheCurrentIcon() {
-        XCTAssertEqual(IconPickerModel(icon: .emoji("👋")).mode, .emoji)
-        XCTAssertEqual(IconPickerModel(icon: .symbol("star")).mode, .symbols)
+    func testItOpensOnTheCurrentSymbolAndColor() {
         let model = IconPickerModel(icon: .symbol("star", color: .teal))
         XCTAssertEqual(model.selectedSymbol, "star")
         XCTAssertEqual(model.selectedColor, .teal)
@@ -133,25 +131,16 @@ final class IconPickerModelTests: XCTestCase {
         XCTAssertEqual(model.icon, .symbol("star", color: nil), "the selected swatch deselects, back to the default tint")
     }
 
-    func testEmojiIgnoresColorAndTheColorComesBackWithTheNextSymbol() {
-        var model = IconPickerModel(icon: .symbol("star", color: .indigo))
-        model.select(emoji: "🚀")
-        XCTAssertEqual(model.icon, .emoji("🚀"))
-        model.mode = .symbols
+    func testAnEmojiIconFromOlderDataIsKeptUntilAChoiceReplacesIt() {
+        var model = IconPickerModel(icon: .emoji("🚀"))
+        XCTAssertEqual(model.icon, .emoji("🚀"), "opening the picker rewrites nothing")
         XCTAssertNil(model.selectedSymbol)
-        XCTAssertEqual(model.selectedColor, .indigo, "the color stays chosen while an emoji is the icon")
+        XCTAssertNil(model.selectedColor)
         model.select(color: .pink)
-        XCTAssertEqual(model.icon, .emoji("🚀"), "choosing a color never turns an emoji into a symbol")
-        model.select(symbol: "heart")
-        XCTAssertEqual(model.icon, .symbol("heart", color: .pink))
-    }
-
-    func testTypedEmojiIsAppliedOnlyWhenItIsOne() {
-        var model = IconPickerModel(icon: .symbol("star"))
-        XCTAssertFalse(model.applyTyped("hello"))
-        XCTAssertEqual(model.icon, .symbol("star"))
-        XCTAssertTrue(model.applyTyped(" 🎉 "))
-        XCTAssertEqual(model.icon, .emoji("🎉"))
+        XCTAssertEqual(model.icon, .symbol(IconPickerModel.fallbackSymbol, color: .pink), "a color turns it into the fallback symbol in that color")
+        var other = IconPickerModel(icon: .emoji("🚀"))
+        other.select(symbol: "heart")
+        XCTAssertEqual(other.icon, .symbol("heart", color: nil))
     }
 
     // MARK: Arrow keys

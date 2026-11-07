@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The smallest library window: wide enough for the sidebar, the list and the editor, and for the whole toolbar
-/// (status chip, Pin/Duplicate/Delete, edited caption, Revert, Save) to show without the overflow menu.
+/// (Sort, New, Pin/Duplicate/Delete, search) to show without the overflow menu.
 enum LibraryWindowMetrics {
     static let minimumSize = CGSize(width: 1020, height: 520)
 
@@ -34,7 +34,7 @@ struct LibraryWindow: View {
                     Button("Try Again") { Task { await openLibrary() } }.keyboardShortcut(.defaultAction)
                 }
             case .ready(_, let library):
-                LibrarySplitView(model: model, library: library,
+                LibrarySplitView(model: model, library: library, tagColors: environment.tagColors,
                                  status: environment.services.map { ExpansionStatus($0.host.status) })
             }
         }
@@ -47,34 +47,31 @@ struct LibraryWindow: View {
 private struct LibrarySplitView: View {
     @Bindable var model: AppModel
     @Bindable var library: LibraryViewModel
+    let tagColors: TagColors
     let status: ExpansionStatus?
     @Environment(\.openURL) private var openURL
     @FocusState private var searchFocused: Bool
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(library: library)
+            SidebarView(library: library, tagColors: tagColors, status: status,
+                        openAccessibility: { openURL(ExpansionStatus.accessibilitySettingsURL) })
         } content: {
             SnippetListView(library: library, select: { id in Task { await model.requestSelection(id) } },
                             newSnippet: { Task { await model.requestNewSnippet() } })
         } detail: {
-            if let editor = model.editor {
-                EditorView(editor: editor)
-                    .id(ObjectIdentifier(editor))
-                    .toolbar { detailToolbar(editor) }
-                    .background { closeEditorShortcut }
-            } else {
-                ContentUnavailableView("Select a Snippet", systemImage: "text.cursor",
-                                       description: Text("Choose a snippet from the list, or create one with New Snippet."))
-            }
-        }
-        .toolbar {
-            // Always visible, at the top of the window: nothing critical at the bottom of the sidebar.
-            if let status {
-                ToolbarItem(placement: .primaryAction) {
-                    ExpansionStatusChip(status: status, openAccessibility: { openURL(ExpansionStatus.accessibilitySettingsURL) })
+            Group {
+                if let editor = model.editor {
+                    EditorView(editor: editor, save: { Task { await model.saveEditor() } },
+                               availableTags: library.tags.map(\.tag), tagColors: tagColors)
+                        .id(ObjectIdentifier(editor))
+                        .background { closeEditorShortcut }
+                } else {
+                    ContentUnavailableView("Select a Snippet", systemImage: "text.cursor",
+                                           description: Text("Choose a snippet from the list, or create one with New Snippet."))
                 }
             }
+            .toolbar { trailingToolbar(editor: model.editor) }
         }
         .searchable(text: $library.query, placement: .toolbar, prompt: "Search snippets")
         .searchFocused($searchFocused)
@@ -94,57 +91,50 @@ private struct LibrarySplitView: View {
         }
     }
 
-    /// Over the detail: what acts on the open snippet, then the one prominent action. Pin, Duplicate and Delete
-    /// need a saved snippet; the row's pin state tells Pin from Unpin.
+    /// One trailing cluster beside the search field, nothing floating mid-bar: what makes or orders the list (Sort,
+    /// New), then, once a snippet is saved, what acts on it (Pin, Duplicate, Delete; the row's pin state tells Pin
+    /// from Unpin). Save and Revert live in the editor's own action bar; the expansion status is a quiet line at the
+    /// foot of the sidebar.
     @ToolbarContentBuilder
-    private func detailToolbar(_ editor: EditorViewModel) -> some ToolbarContent {
-        let saved: UUID? = if case .existing(let id) = editor.target { id } else { nil }
-        let pinned = saved.flatMap { id in library.rows.first { $0.id == id }?.pinned } ?? false
+    private func trailingToolbar(editor: EditorViewModel?) -> some ToolbarContent {
         ToolbarSpacer(.flexible)
         ToolbarItemGroup {
-            Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") {
-                if let saved { Task { await library.togglePin(id: saved) } }
+            Menu {
+                Picker("Sort By", selection: $library.sort) {
+                    ForEach(LibrarySort.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Label("Sort", systemImage: "arrow.up.arrow.down")
             }
-            .help(pinned ? "Unpin this snippet (Shift-Command-P)" : "Pin this snippet (Shift-Command-P)")
-            .disabled(saved == nil || !library.rows.contains { $0.id == saved })
-            Button("Duplicate", systemImage: "plus.square.on.square") {
-                if let saved { Task { await library.duplicate(id: saved) } }
-            }
-            .help("Make a copy of this snippet (Command-D)")
-            .disabled(saved == nil)
-            Button("Delete", systemImage: "trash") {
-                if let saved { Task { await library.delete(id: saved) } }
-            }
-            .help("Move this snippet to Recently Deleted")
-            .disabled(saved == nil)
+            .help("Choose how snippets are ordered")
+            .accessibilityIdentifier("library.sort")
+            Button("New Snippet", systemImage: "square.and.pencil") { Task { await model.requestNewSnippet() } }
+                .help("Create a snippet (Command-N)")
+                .accessibilityIdentifier("library.newSnippet")
         }
-        ToolbarSpacer(.fixed)
-        if let caption = editor.dirtyCaption {
-            ToolbarItem {
-                Text(caption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .accessibilityIdentifier("editor.dirtyCaption")
+        if let editor, case .existing(let saved) = editor.target {
+            let pinned = library.rows.first { $0.id == saved }?.pinned ?? false
+            ToolbarSpacer(.fixed)
+            ToolbarItemGroup {
+                Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") {
+                    Task { await library.togglePin(id: saved) }
+                }
+                .help(pinned ? "Unpin this snippet (Shift-Command-P)" : "Pin this snippet (Shift-Command-P)")
+                .disabled(!library.rows.contains { $0.id == saved })
+                Button("Duplicate", systemImage: "plus.square.on.square") {
+                    Task { await library.duplicate(id: saved) }
+                }
+                .help("Make a copy of this snippet (Command-D)")
+                Button("Delete", systemImage: "trash") {
+                    Task { await library.delete(id: saved) }
+                }
+                .help("Move this snippet to Recently Deleted")
             }
-        }
-        ToolbarItem {
-            Button("Revert") { editor.revert() }
-                .disabled(!editor.isDirty)
-                .help("Discard the changes since the last save")
-                .accessibilityIdentifier("editor.revert")
-        }
-        ToolbarItem(placement: .confirmationAction) {
-            Button("Save") { Task { await model.saveEditor() } }
-                .buttonStyle(.borderedProminent)
-                .disabled(!editor.canSave)
-                .help("Save this snippet (Command-S)")
-                .accessibilityIdentifier("editor.save")
         }
     }
 
-    /// Escape closes the editor through the unsaved-changes confirmation. It has no toolbar button: Revert owns
-    /// the visible slot, and a third button would overflow the toolbar at the minimum window width.
+    /// Escape closes the editor through the unsaved-changes confirmation. It has no visible button of its own.
     private var closeEditorShortcut: some View {
         Button("Close Editor") { Task { await model.requestCancel() } }
             .keyboardShortcut(.cancelAction)

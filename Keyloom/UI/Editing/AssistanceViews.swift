@@ -19,6 +19,7 @@ struct AssistanceMenu: View {
         } label: {
             Label("Rewrite Selection", systemImage: "wand.and.stars")
         }
+        .menuStyle(.borderlessButton)
         .compactLabel(compact)
         .fixedSize()
         .disabled(!assistance.canRequest)

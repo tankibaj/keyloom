@@ -40,6 +40,7 @@ struct KeyloomApp: App {
         Settings {
             SettingsView(settings: environment.services?.settings, snapshotError: environment.model.snapshotError)
         }
+        .windowResizability(.contentMinSize)
     }
 }
 

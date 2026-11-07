@@ -10,7 +10,7 @@ import XCTest
 /// Full screen and Split View are NOT VERIFIED: they change Spaces.
 @MainActor
 final class ResizeJourneyTests: KeyloomUITestCase {
-    private let minimum = CGSize(width: 860, height: 520)
+    private let minimum = CGSize(width: 1020, height: 520)
 
     /// Sets the library window's size and position through System Events; nil on success, else why not.
     private func setWindow(size: CGSize, origin: CGPoint = CGPoint(x: 20, y: 60)) -> String? {
@@ -72,7 +72,7 @@ final class ResizeJourneyTests: KeyloomUITestCase {
                 assertLayoutIntact("minimum \(Int(small.width))x\(Int(small.height))")
                 shot("minimum-size")
                 expect((nameField.value as? String) == draft && saveButton.isEnabled, "the unsaved draft survives shrinking")
-                _ = setWindow(size: CGSize(width: 860, height: 1100), origin: CGPoint(x: 20, y: 40))
+                _ = setWindow(size: CGSize(width: 1020, height: 1100), origin: CGPoint(x: 20, y: 40))
                 assertLayoutIntact("narrow-tall \(Int(library.frame.width))x\(Int(library.frame.height))")
                 shot("narrow-tall")
             }

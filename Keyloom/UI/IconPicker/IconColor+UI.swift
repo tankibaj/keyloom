@@ -50,7 +50,7 @@ extension SnippetIcon {
     /// What VoiceOver reads for the icon button.
     var spoken: String {
         switch self {
-        case .emoji(let emoji): emoji
+        case .emoji: SymbolEntry(name: IconPickerModel.fallbackSymbol, keywords: []).label
         case .symbol(let name, let color):
             [SymbolEntry(name: name, keywords: []).label, color?.rawValue].compactMap { $0 }.joined(separator: ", ")
         }

@@ -1,18 +1,17 @@
 import AppKit
 import SwiftUI
 
-/// The icon popover, after the Shortcuts glyph picker: an Emoji | Symbols switch; for symbols a color row, a
-/// search field (focused on open) and a grid of SF Symbols under uppercase section headers. Choices apply at
-/// once. Arrow keys move through the grid, Return or Space chooses, Escape closes.
+/// The icon popover, after the Shortcuts glyph picker: a color row, a search field (focused on open) and a grid
+/// of SF Symbols under uppercase section headers. Choices apply at once. Arrow keys move through the grid,
+/// Return or Space chooses, Escape closes.
 struct IconPickerView: View {
     @Binding var icon: SnippetIcon
     @State private var model: IconPickerModel
-    @State private var typed = ""
     @FocusState private var focus: Field?
     @Environment(\.dismiss) private var dismiss
 
     private enum Field: Hashable {
-        case search, typedEmoji
+        case search
         case symbol(String)
     }
 
@@ -24,57 +23,15 @@ struct IconPickerView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            Picker("Icon type", selection: $model.mode) {
-                Text("Emoji").tag(IconPickerModel.Mode.emoji)
-                Text("Symbols").tag(IconPickerModel.Mode.symbols)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityLabel("Icon type")
-            .accessibilityIdentifier("icon.mode")
-            switch model.mode {
-            case .emoji: emojiPane
-            case .symbols: symbolsPane
-            }
-        }
+        symbolsPane
         .padding(16)
         .frame(width: 320, height: 420)
         .onExitCommand { dismiss() }
-        .onAppear { focus = model.mode == .symbols ? .search : .typedEmoji }
-        .onChange(of: model.mode) { _, mode in focus = mode == .symbols ? .search : .typedEmoji }
+        .onAppear { focus = .search }
         .onChange(of: model.icon) { _, chosen in icon = chosen }
         .onChange(of: model.hasNoMatches) { _, none in
             if none { AccessibilityNotification.Announcement("No symbols match").post() }
         }
-    }
-
-    // MARK: Emoji
-
-    private var emojiPane: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(IconCatalog.emojis, id: \.self) { emoji in
-                    cell(selected: model.icon == .emoji(emoji), label: SnippetIcon.emoji(emoji).spoken, id: "icon.emoji.\(emoji)") {
-                        model.select(emoji: emoji)
-                    } content: { Text(emoji) }
-                }
-            }
-            HStack {
-                TextField("Type or paste an emoji", text: $typed)
-                    .focused($focus, equals: .typedEmoji)
-                    .onSubmit(applyTyped)
-                    .accessibilityLabel("Emoji")
-                    .accessibilityIdentifier("icon.emojiField")
-                Button("Use", action: applyTyped).disabled(IconCatalog.emoji(from: typed) == nil)
-            }
-            Button("Emoji & Symbols…") { NSApp.orderFrontCharacterPalette(nil) }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func applyTyped() {
-        if model.applyTyped(typed) { typed = "" }
     }
 
     // MARK: Symbols

@@ -34,6 +34,8 @@ final class AppEnvironment {
     let startup: StartupSettings
 
     @ObservationIgnored private let defaults: UserDefaults
+    /// Tag colors: a device-local preference that does not sync.
+    @ObservationIgnored let tagColors: TagColors
     @ObservationIgnored private let syncAdapter: (any SyncEngineAdapter)?
     @ObservationIgnored private var syncTriggers: SyncTriggers?
     @ObservationIgnored private var syncLaunch: Task<Void, Never>?
@@ -46,6 +48,7 @@ final class AppEnvironment {
         self.mode = mode
         let defaults = defaults ?? Self.defaults(for: mode)
         self.defaults = defaults
+        tagColors = TagColors(defaults: defaults)
         startup = StartupSettings(loginItem: mode == .live ? SMAppService.mainApp : InertLoginItem(), defaults: defaults)
         self.syncAdapter = syncAdapter
     }

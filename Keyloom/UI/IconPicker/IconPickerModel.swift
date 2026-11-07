@@ -1,25 +1,21 @@
 import Foundation
 
-/// The icon picker's state and rules, apart from the view: which kind is showing, the search, and what a
-/// choice does to the icon. `icon` is what the editor stores; the view writes it back after each change.
+/// The icon picker's state and rules, apart from the view: the search and what a choice does to the icon.
+/// `icon` is what the editor stores; the view writes it back after each change. Symbols and colors only: an
+/// emoji icon from older data is shown as `fallbackSymbol` and stays stored as it is until a choice replaces it.
 struct IconPickerModel: Equatable {
-    enum Mode: Equatable { case emoji, symbols }
     enum Direction { case left, right, up, down }
 
     static let columns = 8
 
+    /// What an emoji icon (older data) is drawn as, and what a color choice turns it into.
+    static let fallbackSymbol = "doc.text"
+
     private(set) var icon: SnippetIcon
-    var mode: Mode
     var query = ""
-    /// The tint while an emoji is the icon, so the color picked then comes back with the next symbol.
-    private var pendingColor: IconColor?
 
     init(icon: SnippetIcon) {
         self.icon = icon
-        switch icon {
-        case .emoji: mode = .emoji
-        case .symbol(_, let color): mode = .symbols; pendingColor = color
-        }
     }
 
     var selectedSymbol: String? {
@@ -27,7 +23,7 @@ struct IconPickerModel: Equatable {
     }
 
     var selectedColor: IconColor? {
-        if case .symbol(_, let color) = icon { color } else { pendingColor }
+        if case .symbol(_, let color) = icon { color } else { nil }
     }
 
     var visibleSections: [SymbolSection] { SymbolCatalog.sections(matching: query) }
@@ -37,23 +33,11 @@ struct IconPickerModel: Equatable {
         icon = .symbol(name, color: selectedColor)
     }
 
-    /// Choosing the chosen color again goes back to the default tint. An emoji ignores color: the choice waits
-    /// for the next symbol.
+    /// Choosing the chosen color again goes back to the default tint. An emoji icon becomes the fallback symbol
+    /// in the chosen color.
     mutating func select(color: IconColor) {
         let next = selectedColor == color ? nil : color
-        pendingColor = next
-        if case .symbol(let name, _) = icon { icon = .symbol(name, color: next) }
-    }
-
-    mutating func select(emoji: String) {
-        icon = .emoji(emoji)
-    }
-
-    /// Applies typed text when it is exactly one emoji.
-    mutating func applyTyped(_ text: String) -> Bool {
-        guard let chosen = IconCatalog.emoji(from: text) else { return false }
-        icon = chosen
-        return true
+        icon = .symbol(selectedSymbol ?? Self.fallbackSymbol, color: next)
     }
 
     /// The symbol an arrow key moves to from `name`: left and right in reading order across sections, up and down

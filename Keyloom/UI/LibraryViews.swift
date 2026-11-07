@@ -1,17 +1,18 @@
 import AppKit
 import SwiftUI
 
-/// Emoji as text, SF Symbol as an image in its chosen color (secondary when it has none); an unknown symbol name
-/// falls back so a row never renders empty.
+/// An SF Symbol as an image in its chosen color (secondary when it has none). An unknown symbol name, and an emoji
+/// icon from older data (never drawn any more, never rewritten), fall back to a document glyph so a row never
+/// renders empty.
 struct SnippetIconView: View {
     let icon: SnippetIcon
 
     var body: some View {
         switch icon {
-        case .emoji(let emoji):
-            Text(emoji)
+        case .emoji:
+            Image(systemName: IconPickerModel.fallbackSymbol).foregroundStyle(.secondary)
         case .symbol(let name, let color):
-            Image(systemName: NSImage(systemSymbolName: name, accessibilityDescription: nil) == nil ? "doc.text" : name)
+            Image(systemName: NSImage(systemSymbolName: name, accessibilityDescription: nil) == nil ? IconPickerModel.fallbackSymbol : name)
                 .foregroundStyle(color.map { AnyShapeStyle($0.color) } ?? AnyShapeStyle(.secondary))
         }
     }
@@ -31,12 +32,13 @@ struct SnippetIconTile: View {
         SnippetIconView(icon: icon)
             .font(.system(size: size * 0.5))
             .frame(width: size, height: size)
-            .background(tint.opacity(0.16), in: RoundedRectangle(cornerRadius: size / 4, style: .continuous))
+            .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: size / 4, style: .continuous))
             .accessibilityHidden(true)
     }
 }
 
-/// The toolbar chip: whether typing expansion works right now. Needs Accessibility is a button that opens the fix.
+/// The expansion status as one quiet line: a dot and a caption, no pill. It sits at the foot of the sidebar, off
+/// the toolbar. Needs Accessibility is a button that opens the fix; the other states are plain text.
 struct ExpansionStatusChip: View {
     let status: ExpansionStatus
     let openAccessibility: () -> Void
@@ -44,19 +46,17 @@ struct ExpansionStatusChip: View {
     private var color: Color {
         switch status {
         case .on: .green
-        case .paused: .secondary
-        case .needsAccessibility: .orange
+        case .paused, .needsAccessibility: .orange
         }
     }
 
     var body: some View {
         let content = HStack(spacing: 6) {
             Circle().fill(color).frame(width: 7, height: 7)
-            Text(status.title).font(.callout).lineLimit(1)
-            if status == .needsAccessibility { Image(systemName: "arrow.up.forward").font(.caption).foregroundStyle(.secondary) }
+            Text(status.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            if status == .needsAccessibility { Image(systemName: "arrow.up.forward").font(.system(size: 9)).foregroundStyle(.secondary) }
+            Spacer(minLength: 0)
         }
-        .foregroundStyle(status == .needsAccessibility ? .primary : .secondary)
-        .padding(.horizontal, 4)
         .frame(minHeight: 24)
         .contentShape(Rectangle())
         Group {
@@ -75,79 +75,119 @@ struct ExpansionStatusChip: View {
     }
 }
 
+/// A sidebar label with a small, quiet glyph: 13 pt, secondary, one 16 pt column so the titles line up.
+private struct SidebarLabel: View {
+    let title: String
+    let symbol: String
+    /// A tag's own color for its glyph; nil keeps the quiet secondary tone.
+    var tint: Color?
+
+    var body: some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: symbol)
+                .font(.system(size: symbol == "number" ? 11 : 13))
+                .foregroundStyle(tint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
+                .frame(width: 16)
+        }
+    }
+}
+
 struct SidebarView: View {
     @Bindable var library: LibraryViewModel
+    let tagColors: TagColors
+    let status: ExpansionStatus?
+    let openAccessibility: () -> Void
 
     var body: some View {
         List(selection: Binding<SidebarItem?>(get: { library.sidebarItem }, set: { if let item = $0 { library.sidebarItem = item } })) {
             Section("Library") {
-                Label("All Snippets", systemImage: "text.bubble").badge(library.counts.all).tag(SidebarItem.all)
-                Label("Recently Used", systemImage: "clock").badge(library.counts.recentlyUsed).tag(SidebarItem.recentlyUsed)
-                Label("Pinned", systemImage: "pin").badge(library.counts.pinned).tag(SidebarItem.pinned)
+                SidebarLabel(title: "All Snippets", symbol: "rectangle.stack").badge(library.counts.all).tag(SidebarItem.all)
+                SidebarLabel(title: "Recently Used", symbol: "clock").badge(library.counts.recentlyUsed).tag(SidebarItem.recentlyUsed)
+                SidebarLabel(title: "Pinned", symbol: "pin").badge(library.counts.pinned).tag(SidebarItem.pinned)
             }
             if !library.tags.isEmpty {
                 Section("Tags") {
                     ForEach(library.tags, id: \.tag) { summary in
-                        Label(summary.tag, systemImage: "tag").badge(summary.count).tag(SidebarItem.tag(summary.tag))
+                        SidebarLabel(title: summary.tag, symbol: "number", tint: tagColors.color(for: summary.tag)?.color).badge(summary.count).tag(SidebarItem.tag(summary.tag))
                     }
                 }
             }
             Section {
-                Label("Recently Deleted", systemImage: "trash").tag(SidebarItem.recentlyDeleted)
+                SidebarLabel(title: "Recently Deleted", symbol: "trash").tag(SidebarItem.recentlyDeleted)
             }
         }
         .accessibilityLabel("Library navigation")
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let status {
+                ExpansionStatusChip(status: status, openAccessibility: openAccessibility)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
+        }
         .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 280)
     }
 }
 
-/// Name, an Off pill when expansion is off, the keyword as a chip on the right, and one line of the body below.
+/// Name, an Off pill when expansion is off, a pin when pinned; the keyword as a keycap below, then one line of the
+/// body, all on a 4 pt grid.
 struct SnippetRowView: View {
     let row: SnippetRow
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 12) {
             SnippetIconTile(icon: row.icon)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(row.name).fontWeight(.medium).lineLimit(1)
                     if row.keyword != nil, !row.enabled {
                         Text("Off")
-                            .font(.caption2)
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 6)
                             .background(.quaternary, in: Capsule())
                             .fixedSize()
                     }
                     Spacer(minLength: 4)
-                    if row.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
-                    if let keyword = row.keyword { KeywordChip(keyword: keyword) }
+                    if row.pinned { Image(systemName: "pin.fill").font(.system(size: 10)).foregroundStyle(.secondary) }
                 }
+                if let keyword = row.keyword { KeywordChip(keyword: keyword) }
                 if !row.preview.isEmpty {
-                    Text(row.preview).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(row.preview).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
         }
         .opacity(row.keyword != nil && !row.enabled ? 0.6 : 1)
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(row.accessibilityLabel)
     }
 }
 
-/// The keyword drawn like a keycap: monospaced, on a quiet fill. It truncates before the name does.
+/// The keyword drawn like a keycap (the mock's `.key`): 11 pt monospaced on a quiet fill with a slightly darker
+/// bottom edge. It truncates before the name does.
 struct KeywordChip: View {
     let keyword: String
+    /// Increased while the row is selected: the keycap turns translucent white on the accent fill, like the mock.
+    @Environment(\.backgroundProminence) private var prominence
+
+    private var fill: AnyShapeStyle {
+        prominence == .increased ? AnyShapeStyle(Color.white.opacity(0.22)) : AnyShapeStyle(.quaternary)
+    }
 
     var body: some View {
         Text(keyword)
             .font(.system(size: 11, design: .monospaced))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(prominence == .increased ? AnyShapeStyle(Color.white.opacity(0.9)) : AnyShapeStyle(.secondary))
             .lineLimit(1)
             .truncationMode(.middle)
             .padding(.horizontal, 5)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .frame(maxWidth: 110)
+            .padding(.vertical, 0.5)
+            .background(fill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .overlay(alignment: .bottom) { Rectangle().fill(fill).frame(height: 1.5) }
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .frame(maxWidth: 160, alignment: .leading)
             .fixedSize(horizontal: true, vertical: false)
     }
 }
@@ -194,24 +234,6 @@ struct SnippetListView: View {
         .onChange(of: undoManager) { _, manager in library.undoManager = manager }
         .navigationTitle(library.title)
         .navigationSubtitle(library.subtitle)
-        .toolbar {
-            // Over the list: what makes or orders its rows.
-            ToolbarItemGroup(placement: .primaryAction) {
-                Menu {
-                    Picker("Sort By", selection: $library.sort) {
-                        ForEach(LibrarySort.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.inline)
-                } label: {
-                    Label("Sort", systemImage: "arrow.up.arrow.down")
-                }
-                .help("Choose how snippets are ordered")
-                .accessibilityIdentifier("library.sort")
-                Button("New Snippet", systemImage: "square.and.pencil", action: newSnippet)
-                    .help("Create a snippet (Command-N)")
-                    .accessibilityIdentifier("library.newSnippet")
-            }
-        }
         .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
     }
 }

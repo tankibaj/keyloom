@@ -1,9 +1,15 @@
 import SwiftUI
 
-/// The detail column: a borderless title, keyword and tags as one-line rows, the template beside (or, in a narrow
-/// column, above) its live preview, and this device's usage of the snippet.
+/// The detail column: an action bar while there are unsaved changes, a borderless title, keyword and tags as
+/// one-line rows, the template beside (or, in a narrow column, above) its live preview, and this device's usage
+/// of the snippet.
 struct EditorView: View {
     @Bindable var editor: EditorViewModel
+    let save: () -> Void
+    /// Every tag in the library, for the suggestions under the tag field, and their device-local colors.
+    let availableTags: [String]
+    let tagColors: TagColors
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingIcons = false
     @State private var showingArgument = false
     @State private var argumentForm = ArgumentForm()
@@ -20,12 +26,76 @@ struct EditorView: View {
     /// The header, keyword and tag rows, the pane chrome (formatting and insert bars), the usage line and the margins.
     private static let aboveBodyHeight: CGFloat = 400
 
+    /// Only while there is something to save or revert, and for a snippet that does not exist yet.
+    private var showsActionBar: Bool { editor.isDirty || editor.target == .new }
+
     var body: some View {
+        VStack(spacing: 0) {
+            if showsActionBar {
+                actionBar.transition(.move(edge: .top).combined(with: .opacity))
+            }
+            content
+        }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: showsActionBar)
+        .task(id: editor.target) { await editor.refreshUsage() }
+        .onChange(of: editor.errorMessage) { _, message in
+            if let message { AccessibilityNotification.Announcement(message).post() }
+        }
+        .sheet(isPresented: $showingArgument) { argumentSheet }
+        .sheet(isPresented: Binding(get: { editor.assistance.map { $0.state != .idle } ?? false },
+                                    set: { if !$0 { editor.assistance?.cancel() } })) {
+            if let assistance = editor.assistance { AssistanceSheet(assistance: assistance) }
+        }
+    }
+
+    /// 44 pt bar over the form, hairline below: the caption on the left, Revert and the one prominent Save on the
+    /// right. Command-S is the Save Snippet menu command.
+    private var actionBar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text(editor.dirtyCaption ?? "New snippet · not saved")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("editor.dirtyCaption")
+                Spacer(minLength: 8)
+                if editor.isDirty {
+                    Button("Revert") { editor.revert() }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .help("Discard the changes since the last save")
+                        .accessibilityIdentifier("editor.revert")
+                }
+                Button(action: save) {
+                    HStack(spacing: 6) {
+                        Text("Save").fontWeight(.medium)
+                        Text("⌘S")
+                            .font(.system(size: 11, design: .monospaced))
+                            .padding(.horizontal, 4)
+                            .background(.white.opacity(0.25), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .accessibilityHidden(true)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .disabled(!editor.canSave)
+                .help("Save this snippet (Command-S)")
+                .accessibilityLabel("Save")
+                .accessibilityIdentifier("editor.save")
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            Divider()
+        }
+    }
+
+    private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 keywordSection
-                tagsRow
+                // Above the panes, so the tag suggestions drop over them.
+                tagsRow.zIndex(1)
                 panes
                 if let keyword = editor.typedAnywhereKeyword { typedAnywhereLine(keyword) }
                 Text(editor.usageLine)
@@ -38,15 +108,6 @@ struct EditorView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { width = $0.width; height = $0.height }
-        .task(id: editor.target) { await editor.refreshUsage() }
-        .onChange(of: editor.errorMessage) { _, message in
-            if let message { AccessibilityNotification.Announcement(message).post() }
-        }
-        .sheet(isPresented: $showingArgument) { argumentSheet }
-        .sheet(isPresented: Binding(get: { editor.assistance.map { $0.state != .idle } ?? false },
-                                    set: { if !$0 { editor.assistance?.cancel() } })) {
-            if let assistance = editor.assistance { AssistanceSheet(assistance: assistance) }
-        }
     }
 
     // MARK: Header and rows
@@ -64,6 +125,7 @@ struct EditorView: View {
             TextField("Name", text: $editor.draft.name)
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .semibold))
+                .tracking(-0.2)
                 .accessibilityLabel("Snippet name")
                 .accessibilityIdentifier("editor.name")
         }
@@ -142,7 +204,7 @@ struct EditorView: View {
             default: .secondary
             }
             Label(title, systemImage: status.symbol)
-                .font(.caption)
+                .font(.system(size: 11))
                 .foregroundStyle(tint)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 2)
@@ -166,7 +228,7 @@ struct EditorView: View {
     private var tagsRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             rowLabel("Tags")
-            TagChipsView(editor: editor)
+            TagChipsView(editor: editor, available: availableTags, colors: tagColors)
         }
     }
 
@@ -227,6 +289,7 @@ struct EditorView: View {
             } label: {
                 Label("Insert Placeholder", systemImage: "curlybraces")
             }
+            .menuStyle(.borderlessButton)
             .compactLabel(compact)
             .help("Insert Placeholder")
             .fixedSize()
@@ -278,9 +341,9 @@ struct EditorView: View {
 
     private func styleToggle(_ title: String, systemImage: String, style: TextStyle, key: KeyEquivalent) -> some View {
         Toggle(isOn: Binding(get: { editor.bodyController.activeStyles.contains(style) }, set: { _ in editor.bodyController.toggle(style) })) {
-            Image(systemName: systemImage).frame(minWidth: 20)
+            Image(systemName: systemImage)
         }
-        .toggleStyle(.button)
+        .toggleStyle(FormatToggleStyle())
         .keyboardShortcut(key, modifiers: .command)
         .accessibilityLabel(title)
         .help(title)
@@ -288,9 +351,9 @@ struct EditorView: View {
 
     private func kindToggle(_ title: String, systemImage: String, kind: ParagraphKind) -> some View {
         Toggle(isOn: Binding(get: { editor.bodyController.activeKind == kind }, set: { _ in editor.bodyController.setKind(kind) })) {
-            Image(systemName: systemImage).frame(minWidth: 20)
+            Image(systemName: systemImage)
         }
-        .toggleStyle(.button)
+        .toggleStyle(FormatToggleStyle())
         .accessibilityLabel(title)
         .help(title)
     }
@@ -385,6 +448,33 @@ struct EditorView: View {
     }
 }
 
+/// A quiet square toggle for the formatting bar: no fill until hovered, a tinted fill when on.
+private struct FormatToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        FormatToggleBody(configuration: configuration)
+    }
+
+    private struct FormatToggleBody: View {
+        let configuration: ToggleStyleConfiguration
+        @State private var hovering = false
+
+        var body: some View {
+            Button { configuration.isOn.toggle() } label: {
+                configuration.label
+                    .font(.system(size: 13))
+                    .foregroundStyle(configuration.isOn ? Color.accentColor : Color.primary.opacity(0.75))
+                    .frame(width: 28, height: 24)
+                    .background(configuration.isOn ? Color.accentColor.opacity(0.16) : hovering ? Color.primary.opacity(0.07) : .clear,
+                                in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
+        }
+    }
+}
+
 private struct KeywordKey: Hashable {
     let keyword: String
     let enabled: Bool
@@ -401,6 +491,6 @@ private extension View {
     /// The rounded, hairline-bordered frame shared by the template and result panes.
     func paneChrome() -> some View {
         clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator.opacity(0.7), lineWidth: 0.5))
     }
 }
