@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without the leading v (must equal MARKETING_VERSION), e.g. 0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # UNVERIFIED: confirm the `macos-26` runner label and an Xcode 26+ install (see ci.yml).
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BUNDLE_ID: com.thenaim.keyloom
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then v="${GITHUB_REF_NAME#v}"; else v="${INPUT_VERSION#v}"; fi
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || { echo "bad version: $v"; exit 1; }
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+          echo "TAG=v$v" >> "$GITHUB_ENV"
+
+      # Version policy: the tag must match MARKETING_VERSION (bump it in the pbxproj, then tag).
+      - name: Check MARKETING_VERSION matches tag
+        run: |
+          versions="$(grep -E 'MARKETING_VERSION = ' Keyloom.xcodeproj/project.pbxproj | sed -E 's/.*= ([^;]+);/\1/' | sort -u)"
+          if [[ "$versions" != "$VERSION" ]]; then
+            echo "MARKETING_VERSION ($versions) differs from $VERSION"; exit 1
+          fi
+
+      - name: Select newest Xcode
+        run: |
+          latest="$(find /Applications -maxdepth 1 -name "Xcode_*.app" | sort -V | tail -n 1)"
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+
+      - name: Build Release
+        run: echo "APP=$(scripts/build.sh | tail -n 1)" >> "$GITHUB_ENV"
+
+      # Ad-hoc, designated requirement pinned to the bundle id (same as scripts/install.sh) so a user's
+      # Accessibility grant is not tied to the per-build hash.
+      - name: Ad-hoc sign
+        run: |
+          codesign --force --deep --sign - --preserve-metadata=entitlements,flags \
+            -r="designated => identifier \"$BUNDLE_ID\"" "$APP"
+          codesign --verify --deep --strict "$APP"
+          codesign -d -r- "$APP" 2>&1 | grep -F "identifier \"$BUNDLE_ID\""
+
+      - name: Verify bundle (id, version, macOS 26 minimum)
+        run: |
+          plist="$APP/Contents/Info.plist"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" == "$BUNDLE_ID" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" == "$VERSION" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" == "26.0" ]]
+          exe="$APP/Contents/MacOS/Keyloom"
+          vtool -show-build "$exe" | grep -E "minos 26\.0"
+          lipo -archs "$exe" | grep -qx arm64
+
+      - name: Package
+        run: |
+          mkdir dist
+          ZIP="dist/Keyloom-$VERSION-arm64.zip"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+          (cd dist && shasum -a 256 "Keyloom-$VERSION-arm64.zip" > "Keyloom-$VERSION-arm64.zip.sha256")
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+          echo "SHA256=$(shasum -a 256 "$ZIP" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        run: |
+          prerelease=""
+          [[ "$VERSION" == *-* ]] && prerelease="--prerelease"
+          gh release create "$TAG" "$ZIP" "$ZIP.sha256" \
+            --title "Keyloom $VERSION" --generate-notes --verify-tag $prerelease \
+            || gh release upload "$TAG" "$ZIP" "$ZIP.sha256" --clobber
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: tankibaj/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }} # PAT, contents:write on the tap repo only
+          path: tap
+
+      - name: Update cask
+        run: |
+          mkdir -p tap/Casks
+          sed -e "s/@VERSION@/$VERSION/g" -e "s/@SHA256@/$SHA256/g" packaging/homebrew/keyloom.rb > tap/Casks/keyloom.rb
+          ruby -c tap/Casks/keyloom.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/keyloom.rb
+          if git diff --cached --quiet; then echo "cask unchanged"; exit 0; fi
+          git commit -m "keyloom $VERSION"
+          git push

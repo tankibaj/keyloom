@@ -48,6 +48,16 @@ xcodebuild test -project Keyloom.xcodeproj -scheme Keyloom -destination 'platfor
 
 UI journeys run from the `KeyloomUITests` scheme against inert OS boundaries (no tap, hotkey or permission needed). `scripts/release/release.sh --help` documents the Developer ID release; `scripts/profile/profile.sh --help` the idle profile.
 
+## Release and install
+
+Bump `MARKETING_VERSION` in the pbxproj, then push a tag `vX.Y.Z`: `.github/workflows/release.yml` builds, ad-hoc signs (no notarization), publishes `Keyloom-X.Y.Z-arm64.zip` + `.sha256` as a GitHub Release and bumps the cask in `tankibaj/homebrew-tap`. CI (`ci.yml`) builds and runs the unit tests on push to main and PRs.
+
+```sh
+brew install --cask tankibaj/tap/keyloom
+```
+
+The repo is private, so downloads need auth (make it public, or use `HOMEBREW_GITHUB_API_TOKEN`; see `packaging/homebrew/README.md`). Grant Accessibility on first run.
+
 ## Architecture
 
 ### Layers

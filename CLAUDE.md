@@ -13,6 +13,7 @@ Keyloom is a macOS 26+ (arm64, Swift 6, warnings are errors) menu-bar text expan
   The two build settings are required: the Debug config otherwise yields a module `@testable import` rejects. One class or test: `-only-testing:KeyloomTests/KeystrokeInsertionTests` or `.../KeystrokeInsertionTests/testName`. Pipe through `grep -E "error:|failed|Executed|TEST (SUCCEEDED|FAILED)"`.
 - UI tests: scheme `KeyloomUITests` (the app runs with `--keyloom-ui-test`, inert OS boundaries). `KeyloomProbe` and `Feasibility/` are a standalone feasibility probe, not part of the app.
   UI-test screenshots (the runner is sandboxed, tests attach them to the `.xcresult`): `scripts/export-ui-screenshots.sh <result.xcresult> [root]`.
+- GitHub release: push tag `vX.Y.Z` (must equal `MARKETING_VERSION`) -> `.github/workflows/release.yml` (ad-hoc signed, not notarized, zip + sha256, bumps the cask from `packaging/homebrew/keyloom.rb` in `tankibaj/homebrew-tap`; needs secret `TAP_GITHUB_TOKEN`). `ci.yml` builds + unit-tests on main/PRs. `scripts/release/release.sh` stays the Developer ID path.
 - Release (Developer ID, notarize) and idle profile: `scripts/release/release.sh --help`, `scripts/profile/profile.sh --help`.
 - Logs (outcome names only, never text): `log show --last 5m --predicate 'subsystem == "com.thenaim.keyloom"'`.
 

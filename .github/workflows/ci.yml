@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    # UNVERIFIED: confirm the `macos-26` hosted-runner label exists for this account/plan and that
+    # Xcode 26+ is installed on it (the project needs the macOS 26 SDK). Adjust label and path below.
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          latest="$(find /Applications -maxdepth 1 -name "Xcode_*.app" | sort -V | tail -n 1)"
+          echo "Using $latest"
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+
+      - name: Build Release
+        run: scripts/build.sh
+
+      - name: Unit tests
+        run: |
+          xcodebuild test -project Keyloom.xcodeproj -scheme Keyloom -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/keyloom-dd" ENABLE_TESTABILITY=YES SWIFT_OPTIMIZATION_LEVEL=-Onone \
+            -only-testing:KeyloomTests
