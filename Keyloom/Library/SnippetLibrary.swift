@@ -174,7 +174,7 @@ actor SnippetLibrary {
         let usedAt = try await store.recordUsage(id: id)
         if let index = snapshot.firstIndex(where: { $0.id == id }) { snapshot[index].lastUsedAt = usedAt }
         searchIndex.setLastUsedAt(usedAt, for: id)
-        changeContinuation.yield(.usageRecorded(id))
+        broadcaster.yield(.usageRecorded(id))
     }
 
     // MARK: Keyword diagnostics
