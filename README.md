@@ -50,7 +50,7 @@ UI journeys run from the `KeyloomUITests` scheme against inert OS boundaries (no
 
 ## Release and install
 
-Bump `MARKETING_VERSION` in the pbxproj, then push a tag `vX.Y.Z`: `.github/workflows/release.yml` builds, ad-hoc signs (no notarization), publishes `Keyloom-X.Y.Z-arm64.zip` + `.sha256` as a GitHub Release and bumps the cask in `tankibaj/homebrew-tap`. CI (`ci.yml`) builds and runs the unit tests on push to main and PRs.
+Bump `MARKETING_VERSION` in the pbxproj and push to main: `.github/workflows/tag.yml` creates the tag `vX.Y.Z` (if it does not exist) and starts the release (pushing the tag by hand works too). `.github/workflows/release.yml` builds, ad-hoc signs (no notarization), publishes `Keyloom-X.Y.Z-arm64.zip` + `.sha256` as a GitHub Release and bumps the cask in `tankibaj/homebrew-tap`. CI (`ci.yml`) builds and runs the unit tests on push to main and PRs.
 
 ```sh
 brew install --cask tankibaj/tap/keyloom
