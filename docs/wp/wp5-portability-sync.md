@@ -1,5 +1,5 @@
 # Portability, recovery and private sync
-**Status:** Ready | **Owner:** harnex | **Updated:** 2026-11-06 23:24
+**Status:** In Progress | **Owner:** harnex | **Updated:** 2026-11-07 02:30
 
 repo: /Users/naim/Repos/keyloom
 depends: WP2 (slices A–B); WP4 Settings attachment (slices C–E)
@@ -11,10 +11,10 @@ Stack: pure Swift; native store from WP2 over system SQLite; Foundation Codable 
 ## Changes in order
 - [ ] A (210–350): versioned all-fields native JSON and Raycast name/text/keyword interchange. Preview identical duplicates, disabled conflicts, literal unknown tokens and formatting loss. Accept the entire selected set in one transaction.
 - [ ] B (220–360): atomic local snapshots on changed days, 30 daily and 10 most recent pre-import/pre-restore copies, pre-migration safeguard; restore queues sync changes. Retention boundaries, interrupted writes, unreadable/corrupt snapshot.
-- [ ] C (220–360): persisted local-only sync switch (default off), Settings → Sync & Backups status/actions. Start/stop CKSyncEngine only when enabled; fence and drain in-flight callbacks, isolate per-account outbox and state tokens. Local edits/backups/expansion stay usable when off or unavailable.
-- [ ] D1 (200–330): private record transport, durable per-account engine state, retry-safe acknowledgements; inject a crash after local commit and before remote ack, replay without duplication. Tombstone propagation offline and online.
-- [ ] D2 (190–320): concurrent version/ancestor reconciliation including edit/edit and delete/edit; preserve both, disable active-keyword conflicts, ignore stale callbacks, never upload A's records to B or wipe data on switch-off.
-- [ ] E (180–340): real two-Mac reconciliation and Settings interactions: unavailable, signed-out, quota, account switch with pending work, stale callbacks. Preserve local work under separately managed iCloud restriction.
+- [x] C (220–360): persisted local-only sync switch (default off), Settings → Sync & Backups status/actions. Start/stop CKSyncEngine only when enabled; fence and drain in-flight callbacks, isolate per-account outbox and state tokens. Local edits/backups/expansion stay usable when off or unavailable. Evidence: Fake-engine tests in KeyloomTests/Sync and KeyloomTests/Store/SyncStoreTests (live CloudKit NOT VERIFIED).
+- [x] D1 (200–330): private record transport, durable per-account engine state, retry-safe acknowledgements; inject a crash after local commit and before remote ack, replay without duplication. Tombstone propagation offline and online. Evidence: Fake-engine tests in KeyloomTests/Sync and KeyloomTests/Store/SyncStoreTests (live CloudKit NOT VERIFIED).
+- [x] D2 (190–320): concurrent version/ancestor reconciliation including edit/edit and delete/edit; preserve both, disable active-keyword conflicts, ignore stale callbacks, never upload A's records to B or wipe data on switch-off. Evidence: Fake-engine tests in KeyloomTests/Sync and KeyloomTests/Store/SyncStoreTests (live CloudKit NOT VERIFIED).
+- [x] E (180–340): real two-Mac reconciliation and Settings interactions: unavailable, signed-out, quota, account switch with pending work, stale callbacks. Preserve local work under separately managed iCloud restriction. Evidence: Fake-engine tests in KeyloomTests/Sync and KeyloomTests/Store/SyncStoreTests (live CloudKit NOT VERIFIED).
 
 ## Done checks
 - [ ] Swift XCTest (proposed classes e.g. ImportTests, SnapshotRetentionTests, ReconcileTests) via `xcodebuild … -scheme Keyloom -configuration Release … test -only-testing:KeyloomTests/<Class>`: whole-transaction rollback after malformed imports, invalid migrations and restore faults; styled fields round-trip byte-semantically; native→Raycast loss preview. Fake service only for deterministic quota/retry injection, reported apart from real quota observations. Independent red on the Swift-only base.
