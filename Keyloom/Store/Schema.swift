@@ -15,7 +15,7 @@ struct Migration: Sendable {
 /// copy. To undo a step that already shipped, restore the pre-migration backup the runner wrote and run
 /// the previous app version; a step that cannot be undone that way must say so in its own comment.
 enum Migrations {
-    static let all: [Migration] = [v1, v2, v3, v4]
+    static let all: [Migration] = [v1, v2, v3, v4, v5]
 
     /// Initial schema.
     /// Down note: v1 only creates objects, so there is nothing to revert but the whole file. Rolling back
@@ -80,4 +80,14 @@ enum Migrations {
     ) STRICT;
     CREATE INDEX sync_outbox_account_seq ON sync_outbox (account, seq);
     """
+}
+
+extension Migrations {
+    /// A symbol icon's optional color, stored by palette name (NULL: the default tint, and every row written
+    /// before this step; emoji rows never have one).
+    /// Down note: v5 adds one nullable column; undo it by restoring the pre-migration backup the runner writes
+    /// and running the previous app version (an older build refuses a newer `user_version`).
+    static let v5 = Migration(version: 5) { database in
+        try database.execute("ALTER TABLE snippets ADD COLUMN icon_color TEXT")
+    }
 }

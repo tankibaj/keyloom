@@ -25,8 +25,9 @@ final class SyncStoreTests: StoreTestCase {
         let url = try databaseURL()
         let backups = url.deletingLastPathComponent().appendingPathComponent("backups")
         let first = try openStore(at: url, migrations: [Migrations.v1], backupDirectory: backups)
-        let kept = try await first.create(makeSnippet(name: "Kept"))
         await first.close()
+        let kept = makeSnippet(id: ids.next(), name: "Kept")
+        try RawDatabase(url).insertPreColorSnippet(kept)
 
         let store = try openStore(at: url, backupDirectory: backups)
         let raw = try RawDatabase(url)
@@ -411,16 +412,14 @@ final class SyncStoreTests: StoreTestCase {
         let url = try databaseURL()
         let backups = url.deletingLastPathComponent().appendingPathComponent("backups")
         let old = try openStore(at: url, migrations: [Migrations.v1, Migrations.v2, Migrations.v3], backupDirectory: backups)
-        let winner = try await old.create(makeSnippet(name: "Winner", keyword: ";same"))
-        clock.advance(by: 10)
-        var loserSource = makeSnippet(name: "Loser", keyword: ";same", enabled: false)
-        loserSource.revision = 1
-        let loser = try await old.create(loserSource)
-        var retagged = loser
-        retagged.tags = ["t"]
-        let current = try await old.update(retagged)
-        XCTAssertEqual(current.revision, 2)
         await old.close()
+        let winner = makeSnippet(id: ids.next(), name: "Winner", keyword: ";same")
+        clock.advance(by: 10)
+        var loser = makeSnippet(id: ids.next(), name: "Loser", keyword: ";same", enabled: false, tags: ["t"])
+        loser.revision = 2
+        let seed = try RawDatabase(url)
+        try seed.insertPreColorSnippet(winner)
+        try seed.insertPreColorSnippet(loser)
         // A v3 marker has no revision column.
         try RawDatabase(url).execute("INSERT INTO sync_conflict_disabled (record_id) VALUES ('\(loser.id.uuidString)')")
 

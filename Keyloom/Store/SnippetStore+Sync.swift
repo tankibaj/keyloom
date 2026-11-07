@@ -300,7 +300,7 @@ extension SnippetStore {
     // MARK: Private
 
     private static let syncColumns = """
-    id, name, icon_kind, icon_value, keyword, enabled, pinned, revision, template, created_at, updated_at, deleted_at
+    id, name, icon_kind, icon_value, keyword, enabled, pinned, revision, template, created_at, updated_at, deleted_at, icon_color
     """
 
     /// Record IDs that belong to another iCloud account and not to `?1`: the other account has an ancestor for
@@ -333,7 +333,7 @@ extension SnippetStore {
                 unreadable += 1
                 return
             }
-            let icon: SnippetIcon = row.string(2) == "emoji" ? .emoji(row.string(3)) : .symbol(row.string(3))
+            let icon = Self.icon(kind: row.string(2), value: row.string(3), color: row.isNull(12) ? nil : row.string(12))
             let snippet = Snippet(id: rowID, name: row.string(1), icon: icon, keyword: row.isNull(4) ? nil : row.string(4),
                                   enabled: row.int(5) == 1, tags: tagsByID[row.string(0)] ?? [], pinned: row.int(6) == 1,
                                   revision: row.int(7), template: template, createdAt: row.date(9), updatedAt: row.date(10))
@@ -443,21 +443,19 @@ extension SnippetStore {
     /// Inserts or overwrites the live row for `snippet`, with its tags and a history snapshot. Local usage
     /// (last used, count) of an existing row is kept. Never journals.
     private func syncSave(_ db: SQLiteConnection, _ snippet: Snippet) throws {
-        let (iconKind, iconValue): (String, String) = switch snippet.icon {
-        case .emoji(let value): ("emoji", value)
-        case .symbol(let value): ("symbol", value)
-        }
         try db.run("""
-        INSERT INTO snippets (id, name, icon_kind, icon_value, keyword, enabled, pinned, revision, template, created_at,
-                              updated_at, deleted_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        INSERT INTO snippets (id, name, icon_kind, icon_value, icon_color, keyword, enabled, pinned, revision, template,
+                              created_at, updated_at, deleted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
         ON CONFLICT (id) DO UPDATE SET name = excluded.name, icon_kind = excluded.icon_kind,
-            icon_value = excluded.icon_value, keyword = excluded.keyword, enabled = excluded.enabled,
-            pinned = excluded.pinned, revision = excluded.revision, template = excluded.template,
-            created_at = excluded.created_at, updated_at = excluded.updated_at, deleted_at = NULL
-        """, [.uuid(snippet.id), .text(snippet.name), .text(iconKind), .text(iconValue), .text(orNull: snippet.keyword),
-              .bool(snippet.enabled), .bool(snippet.pinned), .int(Int64(snippet.revision)), .blob(try snippet.template.encoded()),
-              .date(snippet.createdAt), .date(snippet.updatedAt)])
+            icon_value = excluded.icon_value, icon_color = excluded.icon_color, keyword = excluded.keyword,
+            enabled = excluded.enabled, pinned = excluded.pinned, revision = excluded.revision,
+            template = excluded.template, created_at = excluded.created_at, updated_at = excluded.updated_at,
+            deleted_at = NULL
+        """, [.uuid(snippet.id), .text(snippet.name)] + Self.iconValues(snippet.icon) + [
+            .text(orNull: snippet.keyword), .bool(snippet.enabled), .bool(snippet.pinned), .int(Int64(snippet.revision)),
+            .blob(try snippet.template.encoded()), .date(snippet.createdAt), .date(snippet.updatedAt),
+        ])
         try db.run("DELETE FROM snippet_tags WHERE snippet_id = ?", [.uuid(snippet.id)])
         for (position, tag) in snippet.tags.enumerated() {
             try db.run("INSERT INTO snippet_tags (snippet_id, tag, position) VALUES (?, ?, ?)",

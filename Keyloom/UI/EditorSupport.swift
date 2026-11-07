@@ -1,11 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// What the icon picker offers, and what it accepts when typed.
+/// What the icon picker offers (symbols come from `SymbolCatalog`), and what it accepts when typed.
 enum IconCatalog {
     static let emojis = ["📝", "✉️", "👋", "📅", "⏰", "✅", "⭐️", "💡", "🔗", "📞", "🏠", "💼", "🎉", "❤️", "🔒", "🧾"]
-    static let symbols = ["text.bubble", "envelope", "calendar", "clock", "star", "bolt", "link", "phone", "house", "briefcase",
-                          "doc.text", "signature", "person", "tag", "bookmark", "lightbulb", "checkmark.seal", "globe", "key", "creditcard"]
+    static var symbols: [String] { SymbolCatalog.allNames }
 
     /// One emoji (a single grapheme with emoji presentation), else nil.
     static func emoji(from input: String) -> SnippetIcon? {

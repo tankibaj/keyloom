@@ -18,7 +18,8 @@ final class AssistanceEditorModel {
 
     private(set) var state = State.idle
 
-    @ObservationIgnored private let editor: EditorViewModel
+    /// Weak: the editor owns this model (`EditorViewModel.assistance`), so a strong reference would be a retain cycle.
+    @ObservationIgnored private weak var editor: EditorViewModel?
     @ObservationIgnored private let service: AssistanceService
     @ObservationIgnored private let policy: WritingAssistancePolicy
     @ObservationIgnored private var proposal: ProposedEdit?
@@ -33,7 +34,7 @@ final class AssistanceEditorModel {
     var isOffered: Bool { policy.snapshot.permitsOnDeviceEdits }
 
     var canRequest: Bool {
-        guard isOffered, editor.bodyController.hasSelection else { return false }
+        guard isOffered, editor?.bodyController.hasSelection == true else { return false }
         if case .working = state { return false }
         return true
     }
@@ -54,7 +55,7 @@ final class AssistanceEditorModel {
     }
 
     func request(_ action: EditAction) async {
-        guard canRequest, let selection = editor.bodyController.selectionInDocument() else { return }
+        guard canRequest, let editor, let selection = editor.bodyController.selectionInDocument() else { return }
         let request = EditRequest(action: action, document: editor.draft.body, revision: editor.bodyRevision, selection: selection)
         state = .working
         do {
@@ -70,7 +71,7 @@ final class AssistanceEditorModel {
     /// One undoable edit in the text view. A suggestion made for an older text or selection is refused.
     func apply() async {
         guard canApply, let edit = proposal else { return }
-        guard let selection = editor.bodyController.selectionInDocument() else {
+        guard let editor, let selection = editor.bodyController.selectionInDocument() else {
             proposal = nil
             state = Self.state(for: AssistanceError.stale)
             return

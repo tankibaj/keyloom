@@ -78,6 +78,24 @@ final class EditorViewModelTests: LibraryUITestCase {
         XCTAssertTrue(editor.isDirty, "a failed save keeps the edits")
     }
 
+    func testChangingOnlyTheSymbolColorMakesTheDraftDirtyAndSavesARevision() async throws {
+        let library = try await openLibrary()
+        var original = try await seed(library, "Tinted")
+        original.icon = .symbol("star")
+        original = try await library.update(original)
+        let editor = makeEditor(library, snippet: original)
+        XCTAssertFalse(editor.isDirty)
+        editor.draft.icon = .symbol("star", color: .green)
+        XCTAssertTrue(editor.isDirty, "a color-only change is an edit")
+        XCTAssertTrue(editor.canSave)
+        let saved = await editor.save()
+        XCTAssertTrue(saved)
+        let stored = await library.snippet(id: original.id)
+        XCTAssertEqual(stored?.icon, .symbol("star", color: .green))
+        XCTAssertEqual(stored?.revision, original.revision + 1)
+        XCTAssertFalse(editor.isDirty)
+    }
+
     func testRevertRestoresTheSavedDraftAndBody() async throws {
         let library = try await openLibrary()
         let original = try await seed(library, "Name", body: "Saved text")

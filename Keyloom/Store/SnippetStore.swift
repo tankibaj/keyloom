@@ -29,7 +29,7 @@ actor SnippetStore {
 
     private static let columns = """
     id, name, icon_kind, icon_value, keyword, enabled, pinned, revision, template, created_at, updated_at, \
-    last_used_at, deleted_at
+    last_used_at, deleted_at, icon_color
     """
     private static let defaultOrder = "pinned DESC, name COLLATE NOCASE, created_at, id"
     private static let uniqueConstraint = SQLITE_CONSTRAINT | (8 << 8)
@@ -78,9 +78,9 @@ actor SnippetStore {
             }
             try mappingKeywordConflict(db, id: stored.id, keyword: stored.keyword) {
                 try db.run("""
-                INSERT INTO snippets (id, name, icon_kind, icon_value, keyword, enabled, pinned, revision, template,
+                INSERT INTO snippets (id, name, icon_kind, icon_value, icon_color, keyword, enabled, pinned, revision, template,
                                       created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, [.uuid(stored.id), .text(stored.name)] + Self.iconValues(stored.icon) + [
                     .text(orNull: stored.keyword), .bool(stored.enabled), .bool(stored.pinned), .int(Int64(stored.revision)),
                     .blob(template), .date(stored.createdAt), .date(stored.updatedAt),
@@ -137,7 +137,7 @@ actor SnippetStore {
             stored.keyword = Self.canonical(stored.keyword)
             try mappingKeywordConflict(db, id: stored.id, keyword: stored.keyword) {
                 try db.run("""
-                UPDATE snippets SET name = ?, icon_kind = ?, icon_value = ?, keyword = ?, enabled = ?, pinned = ?,
+                UPDATE snippets SET name = ?, icon_kind = ?, icon_value = ?, icon_color = ?, keyword = ?, enabled = ?, pinned = ?,
                                     revision = ?, template = ?, updated_at = ?
                 WHERE id = ?
                 """, [.text(stored.name)] + Self.iconValues(stored.icon) + [
@@ -326,11 +326,17 @@ actor SnippetStore {
         return try db.transaction { try body(db) }
     }
 
+    /// `icon_kind, icon_value, icon_color`, in that order.
     static func iconValues(_ icon: SnippetIcon) -> [SQLValue] {
         switch icon {
-        case .emoji(let value): [.text("emoji"), .text(value)]
-        case .symbol(let value): [.text("symbol"), .text(value)]
+        case .emoji(let value): [.text("emoji"), .text(value), .null]
+        case .symbol(let value, let color): [.text("symbol"), .text(value), .text(orNull: color?.rawValue)]
         }
+    }
+
+    /// An unknown color name (written by a newer build) reads as no color rather than hiding the snippet.
+    static func icon(kind: String, value: String, color: String?) -> SnippetIcon {
+        kind == "emoji" ? .emoji(value) : .symbol(value, color: color.flatMap(IconColor.init(rawValue:)))
     }
 
     /// NFC, as `ActiveKeyword` indexes it: the one place keywords are normalized for storage.
@@ -394,7 +400,7 @@ actor SnippetStore {
                 result.unreadable.append(UnreadableRecord(rowID: row.string(0), isDeleted: deletedAt != nil))
                 return
             }
-            let icon: SnippetIcon = row.string(2) == "emoji" ? .emoji(row.string(3)) : .symbol(row.string(3))
+            let icon = Self.icon(kind: row.string(2), value: row.string(3), color: row.isNull(13) ? nil : row.string(13))
             let snippet = Snippet(id: id, name: row.string(1), icon: icon, keyword: row.isNull(4) ? nil : row.string(4),
                                   enabled: row.int(5) == 1, tags: tagsByID[row.string(0)] ?? [], pinned: row.int(6) == 1,
                                   revision: row.int(7), template: template,

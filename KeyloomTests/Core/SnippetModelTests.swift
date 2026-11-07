@@ -62,10 +62,38 @@ final class SnippetModelTests: XCTestCase {
         }
     }
 
+    func testSymbolColorRoundTripsAndIsPartOfEquality() throws {
+        let tinted = SnippetIcon.symbol("star", color: .indigo)
+        XCTAssertEqual(try JSONDecoder().decode(SnippetIcon.self, from: JSONEncoder().encode(tinted)), tinted)
+        XCTAssertNotEqual(tinted, .symbol("star"), "a color-only change is a real edit")
+        XCTAssertEqual(Set([tinted, .symbol("star", color: .indigo), .symbol("star")]).count, 2)
+        var snippet = makeSnippet()
+        snippet.icon = tinted
+        XCTAssertEqual(try JSONDecoder().decode(Snippet.self, from: JSONEncoder().encode(snippet)), snippet)
+    }
+
+    func testIconsWrittenBeforeColorsExistedStillDecodeAndEncodeUnchanged() throws {
+        let legacy = Data(#"{"symbol":{"_0":"envelope"}}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(SnippetIcon.self, from: legacy), .symbol("envelope", color: nil))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        XCTAssertEqual(String(decoding: try encoder.encode(SnippetIcon.symbol("envelope")), as: UTF8.self), #"{"symbol":{"_0":"envelope"}}"#,
+                       "no color, no key: an older build reads what this one writes")
+        XCTAssertEqual(String(decoding: try encoder.encode(SnippetIcon.emoji("🚀")), as: UTF8.self), #"{"emoji":{"_0":"🚀"}}"#)
+        XCTAssertEqual(String(decoding: try encoder.encode(SnippetIcon.symbol("envelope", color: .sage)), as: UTF8.self),
+                       #"{"symbol":{"_0":"envelope","color":"sage"}}"#, "stored by name, never RGB")
+    }
+
+    func testThePaletteHasFifteenNamedColors() {
+        XCTAssertEqual(IconColor.allCases.map(\.rawValue), ["red", "salmon", "orange", "yellow", "green", "teal", "sky", "blue",
+                                                            "indigo", "purple", "violet", "pink", "gray", "sage", "tan"])
+    }
+
     func testPublicModelTypesAreSendable() {
         func requireSendable<T: Sendable>(_: T.Type) {}
         requireSendable(Snippet.self)
         requireSendable(SnippetIcon.self)
+        requireSendable(IconColor.self)
         requireSendable(Document.self)
         requireSendable(Paragraph.self)
         requireSendable(Run.self)

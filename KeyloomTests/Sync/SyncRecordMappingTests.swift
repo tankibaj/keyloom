@@ -31,6 +31,30 @@ final class SyncRecordMappingTests: StoreTestCase {
         XCTAssertEqual(try SnippetRecord.snippet(from: record), expected)
     }
 
+    func testASymbolColorRoundTripsAndARecordWithoutOneReadsAsNoColor() throws {
+        var snippet = richSnippet()
+        snippet.icon = .symbol("bolt", color: .orange)
+        let tinted = try record(for: snippet)
+        XCTAssertEqual(tinted["iconColor"] as? String, "orange")
+        XCTAssertEqual(tinted["schema"] as? Int, 1, "the record schema stays 1: records without the field still decode")
+        XCTAssertEqual(try SnippetRecord.snippet(from: tinted).icon, .symbol("bolt", color: .orange))
+
+        // A record an earlier build wrote has no iconColor field.
+        let legacy = try record(for: snippet)
+        legacy["iconColor"] = nil
+        XCTAssertEqual(try SnippetRecord.snippet(from: legacy).icon, .symbol("bolt", color: nil))
+
+        // Refilling after the color is removed removes it from the record too; an emoji never carries one.
+        snippet.icon = .symbol("bolt")
+        try SnippetRecord.fill(tinted, from: snippet)
+        XCTAssertNil(tinted["iconColor"])
+        let unknown = try record(for: richSnippet())
+        unknown["iconKind"] = "symbol" as CKRecordValue
+        unknown["iconValue"] = "bolt" as CKRecordValue
+        unknown["iconColor"] = "chartreuse" as CKRecordValue
+        XCTAssertEqual(try SnippetRecord.snippet(from: unknown).icon, .symbol("bolt", color: nil), "an unknown name is no color, not a failure")
+    }
+
     func testDeviceLocalUsageNeverLeavesTheMac() throws {
         let keys = Set(try record(for: richSnippet()).allKeys())
         XCTAssertFalse(keys.contains { $0.lowercased().contains("used") || $0.lowercased().contains("count") }, "\(keys)")

@@ -176,3 +176,25 @@ final class AssistanceEditorModelTests: LibraryUITestCase {
         XCTAssertEqual([selection.start, selection.end], [11, 16])
     }
 }
+
+/// The app assigns `editor.assistance = AssistanceEditorModel(editor: editor, ...)` for every editor it opens, so the
+/// model must not own its editor or each opened editor leaks for the life of the resident app.
+@MainActor
+final class AssistanceEditorLeakTests: LibraryUITestCase {
+    func testAnEditorWiredToItsAssistanceModelIsReleasedWithoutACycle() async throws {
+        let library = try await openTestLibrary()
+        let snippet = try await seed(library, "Alpha", body: "Hello")
+        let isolated = makeIsolatedDefaults()
+        addTeardownBlock { UserDefaults(suiteName: isolated.name)?.removePersistentDomain(forName: isolated.name) }
+        let policy = WritingAssistancePolicy(defaults: isolated.defaults, managed: FakeManagedPolicy(), availability: FakeAvailability(),
+                                             locale: Locale(identifier: "en_US"))
+        let service = AssistanceService.make(policy: policy, sessions: FakeModelFactory(.reply("")))
+        weak var weakEditor: EditorViewModel?
+        do {
+            let editor = EditorViewModel(library: library, snippet: snippet)
+            editor.assistance = AssistanceEditorModel(editor: editor, service: service, policy: policy)
+            weakEditor = editor
+        }
+        XCTAssertNil(weakEditor, "editor leaked by an editor <-> assistance retain cycle")
+    }
+}

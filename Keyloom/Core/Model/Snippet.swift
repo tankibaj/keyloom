@@ -1,8 +1,17 @@
 import Foundation
 
+/// The palette a symbol icon can be tinted with, stored by name: the UI maps each name to an adaptive system
+/// color, so a stored color never freezes a light-mode RGB value. The set only grows: an older build cannot
+/// read a name it does not know.
+enum IconColor: String, Codable, Sendable, Hashable, CaseIterable {
+    case red, salmon, orange, yellow, green, teal, sky, blue, indigo, purple, violet, pink, gray, sage, tan
+}
+
+/// An emoji ignores color. A symbol's `color` is optional: nil keeps the default (secondary) tint, and a record
+/// written before colors existed has no `color` key, which decodes to nil.
 enum SnippetIcon: Codable, Sendable, Hashable {
     case emoji(String)
-    case symbol(String)
+    case symbol(String, color: IconColor? = nil)
 }
 
 /// `id` never changes: renames and icon changes keep it, so references and sync records stay valid.
