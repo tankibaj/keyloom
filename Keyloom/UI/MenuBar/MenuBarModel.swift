@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -6,6 +7,28 @@ import Observation
 /// Picking a snippet inserts it into the field focused when it was clicked, or copies it when no field can be used.
 @MainActor @Observable
 final class MenuBarModel {
+    /// What the status row says. One state, derived from the host: Accessibility first, then pause.
+    enum Status: Equatable {
+        case on, paused, needsAccessibility
+
+        var title: String {
+            switch self {
+            case .on: "Expansion on"
+            case .paused: "Paused"
+            case .needsAccessibility: "Needs Accessibility"
+            }
+        }
+    }
+
+    /// A snippet row as the popover draws it: the keyword chip and the ⌘1–9 shortcut (nil past the ninth row).
+    struct PopoverRow: Identifiable, Equatable {
+        let row: SnippetRow
+        let number: Int?
+        var id: UUID { row.id }
+        var chip: String? { row.keyword }
+        var shortcutHint: String? { number.map { "⌘\($0)" } }
+    }
+
     /// The popover lists the first few; the library window has the rest.
     static let rowLimit = 5
 
@@ -28,6 +51,40 @@ final class MenuBarModel {
         get { host.status.isPaused }
         set { host.setPaused(newValue) }
     }
+
+    var status: Status {
+        if !host.status.permissions.accessibility { return .needsAccessibility }
+        return host.status.isPaused ? .paused : .on
+    }
+
+    var needsAccessibility: Bool { status == .needsAccessibility }
+
+    /// The status row's switch: on means expanding. Off when paused or when Accessibility is missing.
+    var isExpanding: Bool {
+        get { status == .on }
+        set { host.setPaused(!newValue) }
+    }
+
+    /// The picker shortcut, shown as a hint in the search field; nil if it is not registered.
+    var pickerShortcutHint: String? {
+        if case .registered(let config) = host.status.shortcut { ShortcutDisplay.string(for: config) } else { nil }
+    }
+
+    /// Pinned then recent rows numbered ⌘1 to ⌘9 in the order they are drawn.
+    var pinnedItems: [PopoverRow] { Self.numbered(pinned, offset: 0) }
+    var recentItems: [PopoverRow] { Self.numbered(recents, offset: pinned.count) }
+
+    nonisolated static func numbered(_ rows: [SnippetRow], offset: Int) -> [PopoverRow] {
+        rows.enumerated().map { PopoverRow(row: $1, number: offset + $0 < 9 ? offset + $0 + 1 : nil) }
+    }
+
+    /// Inserts the snippet shown under ⌘<number>, if any.
+    func insert(number: Int) async {
+        guard let item = (pinnedItems + recentItems).first(where: { $0.number == number }) else { return }
+        await insert(item.id)
+    }
+
+    func openAccessibilitySettings() { NSWorkspace.shared.open(ExpansionSettingsModel.accessibilitySettingsURL) }
 
     var symbolName: String { isPaused ? "pause.circle" : "text.cursor" }
     var shortcutWarning: String? { ShortcutDisplay.message(for: host.status.shortcut) }

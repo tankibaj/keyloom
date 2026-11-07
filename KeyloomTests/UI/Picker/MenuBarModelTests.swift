@@ -46,6 +46,28 @@ final class MenuBarModelTests: PickerTestCase {
         XCTAssertEqual(menu.symbolName, running)
     }
 
+    func testStatusFollowsPermissionThenPause() async throws {
+        try await makeMenu { _ in }
+        XCTAssertEqual(menu.status, .on)
+        XCTAssertTrue(menu.isExpanding)
+        menu.isExpanding = false
+        XCTAssertEqual(menu.status, .paused)
+        harness.permissions.status = PermissionStatus(accessibility: false)
+        harness.controller.refreshPermissions()
+        XCTAssertEqual(menu.status, .needsAccessibility, "a missing grant outranks pause")
+        XCTAssertTrue(menu.needsAccessibility)
+        XCTAssertFalse(menu.isExpanding)
+    }
+
+    func testRowsAreNumberedAcrossSectionsUpToNine() {
+        let rows = (1...12).map { SnippetRow(Snippet(name: "S\($0)", icon: .emoji("x"), keyword: "::s\($0)", template: Document(paragraphs: []), createdAt: Date())) }
+        let items = MenuBarModel.numbered(Array(rows[..<3]), offset: 0) + MenuBarModel.numbered(Array(rows[3...]), offset: 3)
+        XCTAssertEqual(items.prefix(9).compactMap(\.number), Array(1...9))
+        XCTAssertTrue(items.dropFirst(9).allSatisfy { $0.number == nil }, "no shortcut past ⌘9")
+        XCTAssertEqual(items.first?.shortcutHint, "⌘1")
+        XCTAssertEqual(items.first?.chip, "::s1")
+    }
+
     func testAShortcutConflictIsSurfacedWithTheCombination() async throws {
         try await makeMenu { _ in }
         harness.hotKeys.results[.defaultShortcut] = .conflict
