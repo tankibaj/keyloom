@@ -17,7 +17,9 @@ struct ParsedTemplate: Sendable, Hashable {
         for parsed in spans {
             switch parsed.span {
             case .literal(let text):
-                for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                // "\r\n" is one Character, so it is matched as a whole; a lone CR is a line break too.
+                let lines = text.split(omittingEmptySubsequences: false) { $0 == "\n" || $0 == "\r\n" || $0 == "\r" }
+                for (index, line) in lines.enumerated() {
                     if index > 0 { paragraphs.append([]) }
                     if !line.isEmpty { paragraphs[paragraphs.count - 1].append(.literal(String(line))) }
                 }

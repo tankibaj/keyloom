@@ -27,6 +27,7 @@ actor SnippetLibrary {
     private let makeID: @Sendable () -> UUID
     private let changeContinuation: AsyncStream<LibraryChange>.Continuation
     private var snapshot: [Snippet] = []
+    private var unreadable: [UnreadableRecord] = []
     private var searchIndex = SearchIndex(snippets: [])
     private var issuedTicket = 0
     private var appliedTicket = 0
@@ -62,6 +63,10 @@ actor SnippetLibrary {
             .map { TagSummary(tag: $0.key, count: $0.value.count) }
             .sorted { $0.tag < $1.tag }
     }
+
+    /// Rows the library could not read (for example written by a newer Keyloom). They are left out of everything
+    /// above, so the rest of the library works; delete one with `delete(id:)` when its `rowID` is a snippet ID.
+    func unreadableRecords() -> [UnreadableRecord] { unreadable }
 
     func deletedSnippets() async throws -> [DeletedSnippet] { try await store.deletedSnippets() }
 
@@ -205,11 +210,13 @@ actor SnippetLibrary {
     private func reload() async throws {
         issuedTicket += 1
         let ticket = issuedTicket
-        let snippets = try await store.allSnippets()
+        let contents = try await store.contents()
+        let snippets = contents.snippets
         // A newer reload already applied a state read after this write committed.
         guard ticket > appliedTicket else { return }
         appliedTicket = ticket
         snapshot = snippets
+        unreadable = contents.unreadable
         searchIndex = SearchIndex(snippets: snippets)
         keywordIndexStore.replace(KeywordIndex(snippets: snippets))
     }

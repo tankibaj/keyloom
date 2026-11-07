@@ -70,4 +70,24 @@ final class KeywordConflictTests: XCTestCase {
                        ["a<ab:prefix", "a<abc:prefix", "ab<abc:prefix", "bc<abc:suffix"])
         XCTAssertEqual(KeywordConflicts.analyze(snippets.reversed()).overlaps, result.overlaps)
     }
+
+
+    func testKeywordInsideALongerOneIsReportedAsShadowing() {
+        let ab = snippet("ab"), wrapped = snippet(";ab;")
+        let result = KeywordConflicts.analyze([wrapped, ab])
+        XCTAssertEqual(result.overlaps, [KeywordOverlap(kind: .contains, shorter: "ab", shorterSnippetIDs: [ab.id],
+                                                         longer: ";ab;", longerSnippetIDs: [wrapped.id])])
+    }
+
+    func testPairAlreadyReportedAsPrefixIsNotReportedAgainAsContained() {
+        XCTAssertEqual(KeywordConflicts.analyze([snippet("a"), snippet("a;a;a")]).overlaps.map(\.kind), [.prefix])
+        XCTAssertEqual(KeywordConflicts.analyze([snippet("a"), snippet(";a;a")]).overlaps.map(\.kind), [.suffix])
+    }
+
+    func testContainedOverlapsAreDeterministicAndSkipDisabledAndNonOccurrences() {
+        let snippets = [snippet(";ab;"), snippet("ab"), snippet("b;"), snippet("zz"), snippet("a;", enabled: false)]
+        let result = KeywordConflicts.analyze(snippets)
+        XCTAssertEqual(result.overlaps.map { "\($0.shorter)<\($0.longer):\($0.kind)" }, ["ab<;ab;:contains", "b;<;ab;:suffix"])
+        XCTAssertEqual(KeywordConflicts.analyze(snippets.reversed()).overlaps, result.overlaps)
+    }
 }

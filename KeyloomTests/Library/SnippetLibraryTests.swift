@@ -362,4 +362,63 @@ final class SnippetLibraryTests: StoreTestCase {
         let persisted = await reopened.allSnippets()
         XCTAssertEqual(Set(persisted.map(\.id)), Set(live.map(\.id)), "the swapped state is what was committed")
     }
+
+
+    // MARK: Canonical keywords and undecodable rows
+
+    func testComposedAndDecomposedKeywordsCannotBothBeEnabled() async throws {
+        let library = try await openLibrary(at: try databaseURL())
+        let first = try await library.create(name: "A", icon: .emoji("a"), keyword: "caf\u{e9}", template: try document("A"))
+        await assertThrowsTyped(StoreError.keywordConflict(existingID: first.id)) {
+            _ = try await self.library(library, createKeyword: "cafe\u{301}")
+        }
+        let typedMatch = await match(library, "cafe\u{301}")
+        XCTAssertEqual(typedMatch, first.id)
+        let diagnostics = await library.keywordDiagnostics()
+        XCTAssertTrue(diagnostics.conflicts.isEmpty)
+    }
+
+    private func library(_ library: SnippetLibrary, createKeyword keyword: String) async throws -> Snippet {
+        try await library.create(name: "B", icon: .emoji("b"), keyword: keyword, template: try document("B"))
+    }
+
+    func testLibraryLoadsAndMatchesAroundAnUndecodableRow() async throws {
+        let url = try databaseURL()
+        let library = try await openLibrary(at: url)
+        let good = try await library.create(name: "Good", icon: .emoji("g"), keyword: ";good", template: try document("G"))
+        await library.close()
+        let bad = UUID()
+        try RawDatabase(url).execute("""
+        INSERT INTO snippets (id, name, icon_kind, icon_value, keyword, enabled, revision, template, created_at, updated_at)
+        VALUES ('\(bad.uuidString)', 'bad', 'emoji', 'x', ';bad', 1, 1, CAST('{"schemaVersion":99,"paragraphs":[]}' AS BLOB), 0, 0)
+        """)
+
+        let reopened = try await openLibrary(at: url)
+        let listed = await reopened.allSnippets()
+        XCTAssertEqual(listed.map(\.id), [good.id])
+        let matched = await match(reopened, ";good")
+        XCTAssertEqual(matched, good.id)
+        let notMatched = await match(reopened, ";bad")
+        XCTAssertNil(notMatched)
+        let unreadable = await reopened.unreadableRecords()
+        XCTAssertEqual(unreadable, [UnreadableRecord(rowID: bad.uuidString, isDeleted: false)])
+        try await reopened.delete(id: bad)
+        let afterDeleteUnreadable = await reopened.unreadableRecords()
+        XCTAssertEqual(afterDeleteUnreadable, [UnreadableRecord(rowID: bad.uuidString, isDeleted: true)])
+        let afterDelete = await reopened.allSnippets()
+        XCTAssertEqual(afterDelete.map(\.id), [good.id])
+    }
+
+
+    func testInteriorKeywordShadowingIsADiagnostic() async throws {
+        let library = try await openLibrary(at: try databaseURL())
+        let inner = try await library.create(name: "In", icon: .emoji("i"), keyword: "ab", template: try document("I"))
+        let wrapped = try await library.create(name: "Out", icon: .emoji("o"), keyword: ";ab;", template: try document("O"))
+        let all = await library.keywordDiagnostics()
+        XCTAssertEqual(all.overlaps.map(\.kind), [.contains])
+        XCTAssertEqual(all.overlaps.first?.shorterSnippetIDs, [inner.id])
+        XCTAssertEqual(all.overlaps.first?.longerSnippetIDs, [wrapped.id])
+        let forDraft = await library.keywordDiagnostics(for: wrapped)
+        XCTAssertEqual(forDraft.overlaps, all.overlaps)
+    }
 }

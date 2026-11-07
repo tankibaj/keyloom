@@ -13,6 +13,10 @@ import SQLite3
 ///   TODO(keyloom-wp5): writes are last-writer-wins; sync conflict copies arrive with the sync engine.
 /// - Usage (`lastUsedAt`, use count) is device-local: it never bumps a revision, and `update` ignores a
 ///   caller's `lastUsedAt`.
+/// - Keywords are stored in canonical composed form (NFC), the form the matcher compares, so the unique index
+///   treats `é` and `e` + U+0301 as the same keyword.
+/// - A row this build cannot decode (a template from a newer app, a damaged document or id) is skipped by every
+///   listing and reported by `contents()`; it can still be deleted and purged by id.
 /// - Revision history keeps the newest `maxRevisionsPerSnippet` snapshots per snippet.
 ///
 /// - Every local mutation appends a sync-intent row to `sync_outbox` in the same transaction (see
@@ -66,6 +70,7 @@ actor SnippetStore {
         try Self.validate(snippet)
         var stored = snippet
         stored.lastUsedAt = nil
+        stored.keyword = Self.canonical(stored.keyword)
         let template = try stored.template.encoded()
         return try write { db in
             if try db.first("SELECT 1 FROM snippets WHERE id = ?", [.uuid(stored.id)], map: { $0.int(0) }) != nil {
@@ -90,7 +95,11 @@ actor SnippetStore {
 
     /// A live snippet, or nil when unknown or in the trash.
     func snippet(id: UUID) throws -> Snippet? {
-        try read { db in try load(db, where: "id = ? AND deleted_at IS NULL", [.uuid(id)]).first?.snippet }
+        try read { db in
+            let found = try load(db, where: "id = ? AND deleted_at IS NULL", [.uuid(id)])
+            if found.unreadable.isEmpty { return found.loaded.first?.snippet }
+            throw StoreError.corruptRecord(column: "template")
+        }
     }
 
     /// Live snippets, pinned first, then by name. Optionally only those carrying `tag`.
@@ -98,9 +107,19 @@ actor SnippetStore {
         try read { db in
             if let tag {
                 return try load(db, where: "deleted_at IS NULL AND id IN (SELECT snippet_id FROM snippet_tags WHERE tag = ?)",
-                                [.text(tag)]).map(\.snippet)
+                                [.text(tag)]).loaded.map(\.snippet)
             }
-            return try load(db, where: "deleted_at IS NULL").map(\.snippet)
+            return try load(db, where: "deleted_at IS NULL").loaded.map(\.snippet)
+        }
+    }
+
+    /// The whole library in one pass: the readable live snippets, and every row that could not be read
+    /// (live or in the trash), by row ID.
+    func contents() throws -> StoreContents {
+        try read { db in
+            let all = try load(db, where: "1 = 1")
+            return StoreContents(snippets: all.loaded.filter { $0.deletedAt == nil }.map(\.snippet),
+                                 unreadable: all.unreadable.sorted { $0.rowID < $1.rowID })
         }
     }
 
@@ -115,6 +134,7 @@ actor SnippetStore {
             stored.createdAt = current.createdAt
             stored.updatedAt = now()
             stored.lastUsedAt = current.lastUsedAt
+            stored.keyword = Self.canonical(stored.keyword)
             try mappingKeywordConflict(db, id: stored.id, keyword: stored.keyword) {
                 try db.run("""
                 UPDATE snippets SET name = ?, icon_kind = ?, icon_value = ?, keyword = ?, enabled = ?, pinned = ?,
@@ -145,7 +165,7 @@ actor SnippetStore {
 
     func setPinned(_ pinned: Bool, id: UUID) throws -> Snippet {
         try write { db in
-            _ = try liveSnippet(db, id)
+            _ = try liveRow(db, id)
             try db.run("UPDATE snippets SET pinned = ?, revision = revision + 1, updated_at = ? WHERE id = ?",
                        [.bool(pinned), .date(now()), .uuid(id)])
             return try reloadRecordAndJournal(db, id)
@@ -156,7 +176,7 @@ actor SnippetStore {
 
     func delete(id: UUID) throws {
         try write { db in
-            let current = try liveSnippet(db, id)
+            let current = try liveRow(db, id)
             let moment = SQLValue.date(now())
             try db.run("UPDATE snippets SET deleted_at = ?, updated_at = ?, revision = revision + 1 WHERE id = ?",
                        [moment, moment, .uuid(id)])
@@ -166,7 +186,7 @@ actor SnippetStore {
 
     func deletedSnippets() throws -> [DeletedSnippet] {
         try read { db in
-            try load(db, where: "deleted_at IS NOT NULL", order: "deleted_at DESC, id").compactMap { loaded in
+            try load(db, where: "deleted_at IS NOT NULL", order: "deleted_at DESC, id").loaded.compactMap { loaded in
                 loaded.deletedAt.map { DeletedSnippet(snippet: loaded.snippet, deletedAt: $0) }
             }
         }
@@ -176,17 +196,18 @@ actor SnippetStore {
     /// `keywordConflict` and keeps the tombstone, unless `disablingOnKeywordConflict` restores it disabled.
     func restore(id: UUID, disablingOnKeywordConflict: Bool = false) throws -> Snippet {
         try write { db in
-            guard let tombstone = try load(db, where: "id = ?", [.uuid(id)]).first else { throw StoreError.notFound(id: id) }
+            let tombstone = try row(db, id)
             guard tombstone.deletedAt != nil else { throw StoreError.notDeleted(id: id) }
             let moment = SQLValue.date(now())
+            let keyword = Self.canonical(tombstone.keyword)
             do {
-                try mappingKeywordConflict(db, id: id, keyword: tombstone.snippet.keyword) {
-                    try db.run("UPDATE snippets SET deleted_at = NULL, updated_at = ?, revision = revision + 1 WHERE id = ?",
-                               [moment, .uuid(id)])
+                try mappingKeywordConflict(db, id: id, keyword: keyword) {
+                    try db.run("UPDATE snippets SET deleted_at = NULL, keyword = ?, updated_at = ?, revision = revision + 1 WHERE id = ?",
+                               [.text(orNull: keyword), moment, .uuid(id)])
                 }
             } catch StoreError.keywordConflict where disablingOnKeywordConflict {
-                try db.run("UPDATE snippets SET deleted_at = NULL, enabled = 0, updated_at = ?, revision = revision + 1 WHERE id = ?",
-                           [moment, .uuid(id)])
+                try db.run("UPDATE snippets SET deleted_at = NULL, keyword = ?, enabled = 0, updated_at = ?, revision = revision + 1 WHERE id = ?",
+                           [.text(orNull: keyword), moment, .uuid(id)])
             }
             return try reloadRecordAndJournal(db, id)
         }
@@ -195,8 +216,7 @@ actor SnippetStore {
     /// Permanently removes a snippet that is in the trash, with its tags and history.
     func purge(id: UUID) throws {
         try write { db in
-            guard let tombstone = try load(db, where: "id = ?", [.uuid(id)]).first else { throw StoreError.notFound(id: id) }
-            guard tombstone.deletedAt != nil else { throw StoreError.notDeleted(id: id) }
+            guard try row(db, id).deletedAt != nil else { throw StoreError.notDeleted(id: id) }
             try db.run("DELETE FROM snippets WHERE id = ?", [.uuid(id)])
         }
     }
@@ -236,7 +256,7 @@ actor SnippetStore {
     func recentlyUsed(limit: Int) throws -> [Snippet] {
         try read { db in
             try load(db, where: "deleted_at IS NULL AND last_used_at IS NOT NULL", order: "last_used_at DESC, id",
-                     limit: limit).map(\.snippet)
+                     limit: limit).loaded.map(\.snippet)
         }
     }
 
@@ -277,6 +297,19 @@ actor SnippetStore {
         let deletedAt: Date?
     }
 
+    /// Rows that decoded, and those that did not.
+    private struct LoadResult {
+        var loaded: [Loaded] = []
+        var unreadable: [UnreadableRecord] = []
+    }
+
+    /// The columns a delete, restore or purge needs: no template, so an undecodable row can still be handled.
+    private struct Row {
+        let revision: Int
+        let keyword: String?
+        let deletedAt: Date?
+    }
+
     func connection() throws -> SQLiteConnection {
         guard let database else { throw StoreError.closed }
         return database
@@ -296,6 +329,9 @@ actor SnippetStore {
         }
     }
 
+    /// NFC, as `ActiveKeyword` indexes it: the one place keywords are normalized for storage.
+    private static func canonical(_ keyword: String?) -> String? { keyword?.precomposedStringWithCanonicalMapping }
+
     private static func validate(_ snippet: Snippet) throws {
         func isBlank(_ text: String) -> Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         if isBlank(snippet.name) { throw KeyloomError.invalidSnippet(field: "name", reason: "must not be blank") }
@@ -311,16 +347,35 @@ actor SnippetStore {
     }
 
     private func liveSnippet(_ db: SQLiteConnection, _ id: UUID) throws -> Snippet {
-        guard let snippet = try load(db, where: "id = ? AND deleted_at IS NULL", [.uuid(id)]).first?.snippet else {
-            throw StoreError.notFound(id: id)
-        }
-        return snippet
+        guard let snippet = try snippetRow(db, id), snippet.deletedAt == nil else { throw StoreError.notFound(id: id) }
+        return snippet.snippet
     }
 
-    /// Rows plus their tags (one query for all tags). Filters bind as parameters; only fixed SQL fragments
-    /// are ever interpolated.
+    /// One row by ID, live or trashed; nil when absent; `corruptRecord` when it cannot be decoded.
+    private func snippetRow(_ db: SQLiteConnection, _ id: UUID) throws -> Loaded? {
+        let found = try load(db, where: "id = ?", [.uuid(id)])
+        if found.unreadable.isEmpty { return found.loaded.first }
+        throw StoreError.corruptRecord(column: "template")
+    }
+
+    private func row(_ db: SQLiteConnection, _ id: UUID) throws -> Row {
+        let found = try db.first("SELECT revision, keyword, deleted_at FROM snippets WHERE id = ?", [.uuid(id)]) { row in
+            Row(revision: row.int(0), keyword: row.isNull(1) ? nil : row.string(1), deletedAt: row.isNull(2) ? nil : row.date(2))
+        }
+        guard let found else { throw StoreError.notFound(id: id) }
+        return found
+    }
+
+    private func liveRow(_ db: SQLiteConnection, _ id: UUID) throws -> Row {
+        let found = try row(db, id)
+        guard found.deletedAt == nil else { throw StoreError.notFound(id: id) }
+        return found
+    }
+
+    /// Rows plus their tags (one query for all tags). A row that will not decode is reported in `unreadable`
+    /// instead of failing the query. Filters bind as parameters; only fixed SQL fragments are ever interpolated.
     private func load(_ db: SQLiteConnection, where condition: String, _ parameters: [SQLValue] = [],
-                      order: String = SnippetStore.defaultOrder, limit: Int? = nil) throws -> [Loaded] {
+                      order: String = SnippetStore.defaultOrder, limit: Int? = nil) throws -> LoadResult {
         let tail = " WHERE \(condition) ORDER BY \(order)" + (limit == nil ? "" : " LIMIT ?")
         let bound = parameters + (limit.map { [SQLValue.int(Int64($0))] } ?? [])
         var tagsByID: [String: [String]] = [:]
@@ -328,16 +383,22 @@ actor SnippetStore {
                     bound) { row in
             tagsByID[row.string(0), default: []].append(row.string(1))
         }
-        return try db.rows("SELECT \(Self.columns) FROM snippets\(tail)", bound) { row in
-            guard let id = UUID(uuidString: row.string(0)) else { throw StoreError.corruptRecord(column: "id") }
+        var result = LoadResult()
+        _ = try db.rows("SELECT \(Self.columns) FROM snippets\(tail)", bound) { row in
+            let deletedAt = row.isNull(12) ? nil : row.date(12)
+            guard let id = UUID(uuidString: row.string(0)), let template = try? Document.decode(from: row.data(8)) else {
+                result.unreadable.append(UnreadableRecord(rowID: row.string(0), isDeleted: deletedAt != nil))
+                return
+            }
             let icon: SnippetIcon = row.string(2) == "emoji" ? .emoji(row.string(3)) : .symbol(row.string(3))
             let snippet = Snippet(id: id, name: row.string(1), icon: icon, keyword: row.isNull(4) ? nil : row.string(4),
                                   enabled: row.int(5) == 1, tags: tagsByID[row.string(0)] ?? [], pinned: row.int(6) == 1,
-                                  revision: row.int(7), template: try Document.decode(from: row.data(8)),
+                                  revision: row.int(7), template: template,
                                   createdAt: row.date(9), updatedAt: row.date(10),
                                   lastUsedAt: row.isNull(11) ? nil : row.date(11))
-            return Loaded(snippet: snippet, deletedAt: row.isNull(12) ? nil : row.date(12))
+            result.loaded.append(Loaded(snippet: snippet, deletedAt: deletedAt))
         }
+        return result
     }
 
     private func replaceTags(_ db: SQLiteConnection, of snippet: Snippet) throws {
@@ -357,7 +418,7 @@ actor SnippetStore {
     }
 
     private func reloadRecordAndJournal(_ db: SQLiteConnection, _ id: UUID) throws -> Snippet {
-        guard let snippet = try load(db, where: "id = ?", [.uuid(id)]).first?.snippet else { throw StoreError.notFound(id: id) }
+        guard let snippet = try snippetRow(db, id)?.snippet else { throw StoreError.notFound(id: id) }
         try recordRevision(db, snippet)
         try journal(db, id: id, operation: .upsert, revision: snippet.revision)
         return snippet

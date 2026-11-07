@@ -8,9 +8,11 @@ struct KeywordConflict: Equatable, Sendable {
 
 /// `shorter` completes while typing `longer`. `.prefix`: `shorter` starts `longer`, so it expands first and
 /// `longer` can never be typed. `.suffix`: `shorter` ends `longer`; both complete on the same scalar and
-/// the longer one wins, but `shorter` still fires after any other text.
+/// the longer one wins, but `shorter` still fires after any other text. `.contains`: `shorter` sits strictly
+/// inside `longer`, so it completes first and `longer` can never be typed. One finding per pair, strongest
+/// kind first (prefix, suffix, contains).
 struct KeywordOverlap: Equatable, Sendable {
-    enum Kind: Equatable, Sendable { case prefix, suffix }
+    enum Kind: Equatable, Sendable { case prefix, suffix, contains }
 
     let kind: Kind
     let shorter: String
@@ -20,7 +22,7 @@ struct KeywordOverlap: Equatable, Sendable {
 }
 
 /// Duplicate and overlap findings over the same active keywords the matcher indexes (enabled, non-empty,
-/// canonical NFC, case-sensitive). Scalar-wise prefixes and suffixes, matching the matcher.
+/// canonical NFC, case-sensitive). Scalar-wise prefixes, suffixes and interior occurrences, matching the matcher.
 struct KeywordConflicts: Equatable, Sendable {
     let conflicts: [KeywordConflict]
     let overlaps: [KeywordOverlap]
@@ -35,18 +37,21 @@ struct KeywordConflicts: Equatable, Sendable {
             .map { KeywordConflict(keyword: $0.key, snippetIDs: $0.value) }
             .sorted { $0.keyword.unicodeScalars.lexicographicallyPrecedes($1.keyword.unicodeScalars) }
 
+        let keywordLengths = Set(idsByKeyword.keys.map(\.unicodeScalars.count))
         var overlaps: [KeywordOverlap] = []
         for (longer, longerIDs) in idsByKeyword {
             let scalars = Array(longer.unicodeScalars)
+            var found = Set<String>()
+            func report(_ kind: KeywordOverlap.Kind, _ shorter: String) {
+                guard found.insert(shorter).inserted, let ids = idsByKeyword[shorter] else { return }
+                overlaps.append(KeywordOverlap(kind: kind, shorter: shorter, shorterSnippetIDs: ids, longer: longer, longerSnippetIDs: longerIDs))
+            }
             for length in 1..<max(scalars.count, 1) {
-                let prefix = string(scalars[..<length])
-                let suffix = string(scalars[(scalars.count - length)...])
-                if let ids = idsByKeyword[prefix] {
-                    overlaps.append(KeywordOverlap(kind: .prefix, shorter: prefix, shorterSnippetIDs: ids, longer: longer, longerSnippetIDs: longerIDs))
-                }
-                if suffix != prefix, let ids = idsByKeyword[suffix] {
-                    overlaps.append(KeywordOverlap(kind: .suffix, shorter: suffix, shorterSnippetIDs: ids, longer: longer, longerSnippetIDs: longerIDs))
-                }
+                report(.prefix, string(scalars[..<length]))
+                report(.suffix, string(scalars[(scalars.count - length)...]))
+            }
+            for length in keywordLengths where length < scalars.count - 1 {
+                for start in 1...(scalars.count - length - 1) { report(.contains, string(scalars[start..<(start + length)])) }
             }
         }
         overlaps.sort { lhs, rhs in

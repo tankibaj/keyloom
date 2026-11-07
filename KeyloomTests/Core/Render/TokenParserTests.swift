@@ -205,4 +205,14 @@ final class TokenParserTests: XCTestCase {
         XCTAssertNoThrow(try document.validate())
         XCTAssertEqual(document.plainText, "Hi {uuid}\n\nBye{cursor}")
     }
+
+
+    func testCRLFAndLoneCRSplitParagraphsLikeLF() throws {
+        for source in ["a\r\nb", "a\rb", "a\nb"] {
+            let document = try TokenParser.parse(source).document
+            XCTAssertEqual(document.paragraphs.count, 2, "\(source.debugDescription)")
+            XCTAssertEqual(document.paragraphs[0].runs, [Run(style: [], spans: [.literal("a")])])
+            XCTAssertEqual(document.paragraphs[1].runs, [Run(style: [], spans: [.literal("b")])])
+        }
+    }
 }

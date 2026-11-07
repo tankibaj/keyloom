@@ -430,4 +430,136 @@ final class StoreTests: StoreTestCase {
         await store.close()
         await assertThrows(StoreError.closed) { _ = try await store.allSnippets() }
     }
+
+
+    // MARK: Canonical keywords
+
+    private let composed = "caf\u{e9}"
+    private let decomposed = "cafe\u{301}"
+
+    func testDecomposedKeywordConflictsWithComposedAndIsStoredComposed() async throws {
+        let store = try openStore(at: try databaseURL())
+        let first = try await store.create(makeSnippet(keyword: composed))
+        await assertThrows(StoreError.keywordConflict(existingID: first.id)) {
+            _ = try await store.create(self.makeSnippet(keyword: self.decomposed))
+        }
+        let other = try await store.create(makeSnippet(keyword: ";x"))
+        var edited = other
+        edited.keyword = decomposed
+        await assertThrows(StoreError.keywordConflict(existingID: first.id)) { _ = try await store.update(edited) }
+
+        let disabled = try await store.create(makeSnippet(keyword: "u\u{308}", enabled: false))
+        XCTAssertEqual(Array((disabled.keyword ?? "").unicodeScalars), [Unicode.Scalar(0xFC)!], "stored in NFC")
+        let reread = try await store.snippet(id: disabled.id)
+        XCTAssertEqual(Array((reread?.keyword ?? "").unicodeScalars), [Unicode.Scalar(0xFC)!])
+    }
+
+    func testRestoreAndDuplicateSeeTheComposedKeyword() async throws {
+        let store = try openStore(at: try databaseURL())
+        let original = try await store.create(makeSnippet(keyword: composed))
+        try await store.delete(id: original.id)
+        let taker = try await store.create(makeSnippet(keyword: decomposed))
+        await assertThrows(StoreError.keywordConflict(existingID: taker.id)) { _ = try await store.restore(id: original.id) }
+        let restored = try await store.restore(id: original.id, disablingOnKeywordConflict: true)
+        XCTAssertFalse(restored.enabled)
+
+        let copy = try await store.duplicate(id: taker.id)
+        XCTAssertFalse(copy.enabled)
+        XCTAssertEqual(Array((copy.keyword ?? "").unicodeScalars), Array(composed.unicodeScalars))
+    }
+
+    func testRestoreOfALegacyDecomposedTombstoneComposesItsKeyword() async throws {
+        let url = try databaseURL()
+        let store = try openStore(at: url)
+        let original = try await store.create(makeSnippet(keyword: ";x"))
+        try await store.delete(id: original.id)
+        try RawDatabase(url).execute("UPDATE snippets SET keyword = '\(decomposed)' WHERE id = '\(original.id.uuidString)'")
+        let restored = try await store.restore(id: original.id)
+        XCTAssertEqual(Array((restored.keyword ?? "").unicodeScalars), Array(composed.unicodeScalars))
+        await assertThrows(StoreError.keywordConflict(existingID: original.id)) {
+            _ = try await store.create(self.makeSnippet(keyword: self.decomposed))
+        }
+    }
+
+    // MARK: Undecodable rows
+
+    private let newerDocument = "CAST('{\"schemaVersion\":99,\"paragraphs\":[]}' AS BLOB)"
+
+    private func insertCorrupt(_ raw: RawDatabase, id: UUID, keyword: String? = nil, deleted: Bool = false,
+                               template: String? = nil) throws {
+        let keywordSQL = keyword.map { "'\($0)'" } ?? "NULL"
+        try raw.execute("""
+        INSERT INTO snippets (id, name, icon_kind, icon_value, keyword, enabled, revision, template, created_at, updated_at, deleted_at)
+        VALUES ('\(id.uuidString)', 'bad', 'emoji', 'x', \(keywordSQL), 1, 1, \(template ?? newerDocument), 0, 0, \(deleted ? "1" : "NULL"))
+        """)
+    }
+
+    func testOneUndecodableLiveRowDoesNotHideTheRestOfTheLibrary() async throws {
+        let url = try databaseURL()
+        let store = try openStore(at: url)
+        let good = try await store.create(makeSnippet(keyword: ";good"))
+        try await store.recordUsage(id: good.id)
+        let bad = UUID()
+        let raw = try RawDatabase(url)
+        try insertCorrupt(raw, id: bad, keyword: ";bad")
+        try raw.execute("UPDATE snippets SET last_used_at = 5 WHERE id = '\(bad.uuidString)'")
+        try insertCorrupt(raw, id: UUID(), template: "x'7B7D'")
+        try raw.execute("INSERT INTO snippets (id, name, icon_kind, icon_value, enabled, revision, template, created_at, updated_at) VALUES ('not-a-uuid', 'x', 'emoji', 'x', 1, 1, x'7B7D', 0, 0)")
+
+        let listed = try await store.allSnippets()
+        XCTAssertEqual(listed.map(\.id), [good.id])
+        let recent = try await store.recentlyUsed(limit: 10)
+        XCTAssertEqual(recent.map(\.id), [good.id])
+        let tagged = try await store.allSnippets(tag: "none")
+        XCTAssertTrue(tagged.isEmpty)
+        let pinned = try await store.setPinned(true, id: good.id)
+        XCTAssertTrue(pinned.pinned)
+
+        await assertThrows(StoreError.corruptRecord(column: "template")) { _ = try await store.setPinned(true, id: bad) }
+        try await store.delete(id: bad)
+        _ = try await store.create(makeSnippet(name: "Reuse", keyword: ";bad"))
+        let remaining = try await store.allSnippets()
+        XCTAssertEqual(Set(remaining.map(\.name)), ["Greeting", "Reuse"])
+    }
+
+    func testUndecodableTombstoneIsSkippedAndCanBePurged() async throws {
+        let url = try databaseURL()
+        let store = try openStore(at: url)
+        let good = try await store.create(makeSnippet(keyword: ";good"))
+        try await store.delete(id: good.id)
+        let bad = UUID()
+        let raw = try RawDatabase(url)
+        try insertCorrupt(raw, id: bad, deleted: true)
+
+        let trash = try await store.deletedSnippets()
+        XCTAssertEqual(trash.map(\.snippet.id), [good.id])
+        await assertThrows(StoreError.corruptRecord(column: "template")) { _ = try await store.restore(id: bad) }
+        try await store.purge(id: bad)
+        XCTAssertEqual(try raw.count("snippets"), 1)
+        await assertThrows(StoreError.notFound(id: bad)) { try await store.purge(id: bad) }
+        let liveBad = UUID()
+        try insertCorrupt(raw, id: liveBad)
+        await assertThrows(StoreError.notDeleted(id: liveBad)) { try await store.purge(id: liveBad) }
+    }
+
+
+    func testContentsReportsUndecodableRowsAlongsideReadableOnes() async throws {
+        let url = try databaseURL()
+        let store = try openStore(at: url)
+        let good = try await store.create(makeSnippet(keyword: ";good"))
+        let live = UUID(), tombstone = UUID()
+        let raw = try RawDatabase(url)
+        try insertCorrupt(raw, id: live, keyword: ";bad")
+        try insertCorrupt(raw, id: tombstone, deleted: true)
+        try raw.execute("INSERT INTO snippets (id, name, icon_kind, icon_value, enabled, revision, template, created_at, updated_at) VALUES ('not-a-uuid', 'x', 'emoji', 'x', 1, 1, x'7B7D', 0, 0)")
+
+        var contents = try await store.contents()
+        XCTAssertEqual(contents.snippets.map(\.id), [good.id])
+        XCTAssertEqual(Set(contents.unreadable), [UnreadableRecord(rowID: live.uuidString, isDeleted: false),
+                                                  UnreadableRecord(rowID: tombstone.uuidString, isDeleted: true),
+                                                  UnreadableRecord(rowID: "not-a-uuid", isDeleted: false)])
+        try await store.delete(id: live)
+        contents = try await store.contents()
+        XCTAssertTrue(contents.unreadable.contains(UnreadableRecord(rowID: live.uuidString, isDeleted: true)))
+    }
 }
