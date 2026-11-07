@@ -15,6 +15,58 @@ enum SidebarItem: Hashable, Sendable {
     }
 }
 
+/// How the list is ordered. Name is the library's own order (pinned first, then by name).
+enum LibrarySort: String, CaseIterable, Identifiable, Sendable {
+    case name, recentlyEdited, recentlyUsed
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .name: "Name"
+        case .recentlyEdited: "Recently Edited"
+        case .recentlyUsed: "Recently Used"
+        }
+    }
+
+    /// Stable; pinned snippets stay first, ties keep the library's order. A search keeps its relevance order.
+    func apply(to snippets: [Snippet]) -> [Snippet] {
+        switch self {
+        case .name: return snippets
+        case .recentlyEdited: return Self.ordered(snippets) { $0.updatedAt }
+        case .recentlyUsed: return Self.ordered(snippets) { $0.lastUsedAt ?? .distantPast }
+        }
+    }
+
+    private static func ordered(_ snippets: [Snippet], by date: (Snippet) -> Date) -> [Snippet] {
+        let indexed = snippets.enumerated().sorted { a, b in
+            if a.element.pinned != b.element.pinned { return a.element.pinned }
+            let (x, y) = (date(a.element), date(b.element))
+            return x == y ? a.offset < b.offset : x > y
+        }
+        return indexed.map(\.element)
+    }
+}
+
+/// What the sidebar footer says about typing expansion: Accessibility first, then pause. Words and counts only.
+enum ExpansionStatus: Equatable, Sendable {
+    case on, paused, needsAccessibility
+
+    static let accessibilitySettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+
+    init(_ status: HostStatus) {
+        if !status.permissions.accessibility { self = .needsAccessibility } else { self = status.isPaused ? .paused : .on }
+    }
+
+    var title: String {
+        switch self {
+        case .on: "Expansion on"
+        case .paused: "Paused"
+        case .needsAccessibility: "Needs Accessibility"
+        }
+    }
+}
+
 struct SidebarCounts: Equatable, Sendable {
     var all = 0
     var recentlyUsed = 0
@@ -29,6 +81,11 @@ struct SnippetRow: Identifiable, Equatable, Sendable {
     let keyword: String?
     let enabled: Bool
     let pinned: Bool
+    /// One line of the body as typed (placeholders as their source), for the second line of the row.
+    let preview: String
+
+    /// Enough for any list column; the view truncates to one line.
+    static let previewLimit = 120
 
     init(_ snippet: Snippet) {
         id = snippet.id
@@ -37,6 +94,38 @@ struct SnippetRow: Identifiable, Equatable, Sendable {
         keyword = snippet.keyword.flatMap { $0.isEmpty ? nil : $0 }
         enabled = snippet.enabled
         pinned = snippet.pinned
+        preview = Self.preview(of: snippet.template)
+    }
+
+    /// The body flattened to one line: whitespace runs collapse to one space, list markers are left out, and the
+    /// walk stops once the limit is reached so a huge body costs nothing.
+    static func preview(of document: Document, limit: Int = previewLimit) -> String {
+        var text = ""
+        var pendingSpace = false
+        func add(_ piece: String) {
+            for character in piece {
+                if character.isWhitespace || character.isNewline {
+                    pendingSpace = !text.isEmpty
+                } else {
+                    if pendingSpace { text.append(" "); pendingSpace = false }
+                    text.append(character)
+                }
+                if text.count >= limit { return }
+            }
+        }
+        for paragraph in document.paragraphs {
+            pendingSpace = !text.isEmpty
+            for run in paragraph.runs {
+                for span in run.spans {
+                    switch span {
+                    case .literal(let literal): add(literal)
+                    case .token(let token): add(token.raw)
+                    }
+                    if text.count >= limit { return String(text.prefix(limit)) }
+                }
+            }
+        }
+        return text
     }
 
     /// What VoiceOver reads for the row.
@@ -72,6 +161,7 @@ final class LibraryViewModel {
     var sidebarItem: SidebarItem = .all { didSet { if sidebarItem != oldValue { launch { await $0.refresh() } } } }
     var query = "" { didSet { if query != oldValue { launch { await $0.refresh() } } } }
     var selection: UUID?
+    var sort: LibrarySort = .name { didSet { if sort != oldValue { launch { await $0.refresh() } } } }
     /// How the model asks for a selection change it makes itself (duplicate, delete, undo). `AppModel` sets it to
     /// route through the dirty-edit guard; without it the selection just changes.
     @ObservationIgnored var selectionRequest: (@MainActor (UUID?) async -> Void)?
@@ -93,6 +183,23 @@ final class LibraryViewModel {
         self.library = library
     }
 
+    /// The window title: where you are.
+    var title: String {
+        switch sidebarItem {
+        case .all: "All Snippets"
+        case .recentlyUsed: "Recently Used"
+        case .pinned: "Pinned"
+        case .tag(let tag): tag
+        case .recentlyDeleted: "Recently Deleted"
+        }
+    }
+
+    /// The window subtitle; shown on every page so the toolbar height never changes.
+    var subtitle: String {
+        let count = sidebarItem == .recentlyDeleted ? deletedRows.count : rows.count
+        return count == 1 ? "1 snippet" : "\(count) snippets"
+    }
+
     // MARK: Reading
 
     func refresh() async {
@@ -108,7 +215,8 @@ final class LibraryViewModel {
         let outcome = await library.search(query: query.trimmingCharacters(in: .whitespacesAndNewlines), filter: sidebarItem.filter)
         switch outcome {
         case .results(let hits):
-            rows = hits.map { SnippetRow($0.snippet) }
+            let ordered = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? sort.apply(to: hits.map(\.snippet)) : hits.map(\.snippet)
+            rows = ordered.map(SnippetRow.init)
             emptyState = nil
         case .emptyLibrary:
             rows = []

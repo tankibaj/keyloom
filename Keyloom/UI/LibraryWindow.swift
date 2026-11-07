@@ -33,7 +33,8 @@ struct LibraryWindow: View {
                     Button("Try Again") { Task { await openLibrary() } }.keyboardShortcut(.defaultAction)
                 }
             case .ready(_, let library):
-                LibrarySplitView(model: model, library: library)
+                LibrarySplitView(model: model, library: library,
+                                 status: environment.services.map { ExpansionStatus($0.host.status) })
             }
         }
         .frame(minWidth: LibraryWindowMetrics.minimumSize.width, minHeight: LibraryWindowMetrics.minimumSize.height)
@@ -45,11 +46,14 @@ struct LibraryWindow: View {
 private struct LibrarySplitView: View {
     @Bindable var model: AppModel
     @Bindable var library: LibraryViewModel
+    let status: ExpansionStatus?
+    @Environment(\.openURL) private var openURL
     @FocusState private var searchFocused: Bool
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(library: library)
+            SidebarView(library: library, status: status,
+                        openAccessibility: { openURL(ExpansionStatus.accessibilitySettingsURL) })
         } content: {
             SnippetListView(library: library, select: { id in Task { await model.requestSelection(id) } },
                             newSnippet: { Task { await model.requestNewSnippet() } })
@@ -57,15 +61,7 @@ private struct LibrarySplitView: View {
             if let editor = model.editor {
                 EditorView(editor: editor)
                     .id(ObjectIdentifier(editor))
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") { Task { await model.requestCancel() } }.keyboardShortcut(.cancelAction)
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Save") { Task { await model.saveEditor() } }.disabled(!editor.canSave)
-                                .accessibilityIdentifier("editor.save")
-                        }
-                    }
+                    .toolbar { detailToolbar(editor) }
             } else {
                 ContentUnavailableView("Select a Snippet", systemImage: "text.cursor",
                                        description: Text("Choose a snippet from the list, or create one with New Snippet."))
@@ -74,13 +70,6 @@ private struct LibrarySplitView: View {
         .searchable(text: $library.query, placement: .toolbar, prompt: "Search snippets")
         .searchFocused($searchFocused)
         .onChange(of: model.searchFocusRequests) { searchFocused = true }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("New Snippet", systemImage: "square.and.pencil") { Task { await model.requestNewSnippet() } }
-                    .help("New Snippet")
-                    .accessibilityIdentifier("library.newSnippet")
-            }
-        }
         .task { await library.observeChanges() }
         .confirmationDialog(dismissalTitle, isPresented: Binding(get: { model.pendingDismissal != nil }, set: { _ in }), titleVisibility: .visible) {
             Button("Save") { Task { await model.resolvePending(.save) } }.keyboardShortcut(.defaultAction)
@@ -93,6 +82,45 @@ private struct LibrarySplitView: View {
             Button("OK") { library.errorMessage = nil }
         } message: {
             Text(library.errorMessage ?? "")
+        }
+    }
+
+    /// Over the detail: what acts on the open snippet, then the one prominent action. Pin, Duplicate and Delete
+    /// need a saved snippet; the row's pin state tells Pin from Unpin.
+    @ToolbarContentBuilder
+    private func detailToolbar(_ editor: EditorViewModel) -> some ToolbarContent {
+        let saved: UUID? = if case .existing(let id) = editor.target { id } else { nil }
+        let pinned = saved.flatMap { id in library.rows.first { $0.id == id }?.pinned } ?? false
+        ToolbarSpacer(.flexible)
+        ToolbarItemGroup {
+            Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") {
+                if let saved { Task { await library.togglePin(id: saved) } }
+            }
+            .help(pinned ? "Unpin this snippet (Shift-Command-P)" : "Pin this snippet (Shift-Command-P)")
+            .disabled(saved == nil || !library.rows.contains { $0.id == saved })
+            Button("Duplicate", systemImage: "plus.square.on.square") {
+                if let saved { Task { await library.duplicate(id: saved) } }
+            }
+            .help("Make a copy of this snippet (Command-D)")
+            .disabled(saved == nil)
+            Button("Delete", systemImage: "trash") {
+                if let saved { Task { await library.delete(id: saved) } }
+            }
+            .help("Move this snippet to Recently Deleted")
+            .disabled(saved == nil)
+        }
+        ToolbarSpacer(.fixed)
+        ToolbarItem(placement: .cancellationAction) {
+            Button("Cancel") { Task { await model.requestCancel() } }
+                .keyboardShortcut(.cancelAction)
+                .help("Close the editor without saving (Escape)")
+        }
+        ToolbarItem(placement: .confirmationAction) {
+            Button("Save") { Task { await model.saveEditor() } }
+                .buttonStyle(.borderedProminent)
+                .disabled(!editor.canSave)
+                .help("Save this snippet (Command-S)")
+                .accessibilityIdentifier("editor.save")
         }
     }
 
