@@ -72,7 +72,8 @@ extension SnippetStore {
                 $0.string(0)
             })
             var enqueued = 0
-            let forced = try syncSettleMarkers(db).forced
+            let settled = try syncSettleMarkers(db)
+            let forced = settled.forced
             for row in try syncRows(db).rows {
                 let key = row.snippet.id.uuidString
                 guard !foreign.contains(key), !queued.contains(key) else { continue }
@@ -90,7 +91,7 @@ extension SnippetStore {
                                 revision: row.snippet.revision)
                 enqueued += 1
             }
-            return SyncPreparation(adopted: adopted, enqueued: enqueued)
+            return SyncPreparation(adopted: adopted, enqueued: enqueued, reenabled: settled.reenabled)
         }
     }
 
@@ -98,6 +99,12 @@ extension SnippetStore {
     /// change nothing (the cloud already agrees, or the record was created and deleted before any sync) and
     /// intents for records another account owns are acknowledged here instead of being sent.
     func nextOutgoing(account: String, limit: Int) throws -> [OutgoingChange] {
+        try nextOutgoingBatch(account: account, limit: limit).changes
+    }
+
+    /// `nextOutgoing`, also saying whether settling conflict markers turned a snippet back on, so the caller can
+    /// reload the library.
+    func nextOutgoingBatch(account: String, limit: Int) throws -> OutgoingBatch {
         try Self.validateAccount(account)
         return try write { db in
             let foreign = Set(try db.rows(Self.ownedByOtherAccounts, [.text(account)]) { $0.string(0) })
@@ -108,7 +115,8 @@ extension SnippetStore {
                 intents[entry.recordID, default: []].append(entry)
             }
             var changes: [OutgoingChange] = []
-            let forced = try syncSettleMarkers(db).forced
+            let settled = try syncSettleMarkers(db)
+            let forced = settled.forced
             for id in order where changes.count < limit {
                 let retryIDs = (intents[id] ?? []).map(\.retryID)
                 func discard() throws {
@@ -130,7 +138,7 @@ extension SnippetStore {
                     try discard()
                 }
             }
-            return changes
+            return OutgoingBatch(changes: changes, libraryChanged: settled.reenabled)
         }
     }
 
@@ -175,10 +183,13 @@ extension SnippetStore {
         }
         return try write { db in
             let id = checked.recordID
+            // Settle first: a loser whose keyword was freed must be read as the enabled snippet it is again,
+            // or it would look edited against its ancestor and produce a spurious conflict copy.
+            let settled = try syncSettleMarkers(db)
+            var reenabled = settled.reenabled
+            let forced = settled.forced
             let found = try syncRows(db, id: id)
             guard found.unreadable == 0 else { throw StoreError.corruptRecord(column: "template") }
-            var reenabled = try syncSettleMarkers(db).reenabled
-            let forced = try syncSettleMarkers(db).forced
             let local = found.rows.first.map {
                 LocalState(snippet: Self.syncNormalized($0.snippet, forced: forced), isDeleted: $0.deletedAt != nil)
             }
@@ -234,7 +245,7 @@ extension SnippetStore {
 
     /// Snippets sync turned off because another snippet holds their keyword (and still does): for a notice.
     func keywordConflictDisabledIDs() throws -> [UUID] {
-        try write { db in try syncSettleMarkers(db).forced.sorted { $0.uuidString < $1.uuidString } }
+        try read { db in try syncSettleMarkers(db, apply: false).forced.sorted { $0.uuidString < $1.uuidString } }
     }
 
     // MARK: Private
@@ -321,7 +332,7 @@ extension SnippetStore {
     /// again (the owner was deleted, turned off or re-keyed) is turned back on, locally and without journaling:
     /// its ancestor already says enabled, so nothing is pushed and every Mac ends up the same. Earliest first, so
     /// the same snippet wins here as in `Reconciler`.
-    private func syncSettleMarkers(_ db: SQLiteConnection) throws -> (forced: Set<UUID>, reenabled: Bool) {
+    private func syncSettleMarkers(_ db: SQLiteConnection, apply: Bool = true) throws -> (forced: Set<UUID>, reenabled: Bool) {
         let markers = try db.rows("""
         SELECT f.record_id, f.revision FROM sync_conflict_disabled f LEFT JOIN snippets s ON s.id = f.record_id
         ORDER BY s.created_at, f.record_id
@@ -330,11 +341,11 @@ extension SnippetStore {
         var reenabled = false
         for (maybeID, markerRevision) in markers {
             guard let id = maybeID else { continue }
-            func drop() throws { try db.run("DELETE FROM sync_conflict_disabled WHERE record_id = ?", [.uuid(id)]) }
+            func drop() throws { if apply { try db.run("DELETE FROM sync_conflict_disabled WHERE record_id = ?", [.uuid(id)]) } }
             let found = try syncRows(db, id: id)
             guard found.unreadable == 0 else { continue }
             guard let row = found.rows.first, row.deletedAt == nil, !row.snippet.enabled,
-                  try syncMarkerIsCurrent(db, id, markerRevision: markerRevision, currentRevision: row.snippet.revision) else {
+                  try syncMarkerIsCurrent(db, id, markerRevision: markerRevision, currentRevision: row.snippet.revision, apply: apply) else {
                 try drop()
                 continue
             }
@@ -342,6 +353,7 @@ extension SnippetStore {
                 forced.insert(id)
                 continue
             }
+            guard apply else { continue } // read-only: a freed loser is neither forced nor changed here
             var restored = row.snippet
             restored.enabled = true
             restored.revision += 1
@@ -356,7 +368,8 @@ extension SnippetStore {
     /// The snippet has not been enabled since the marker was written: either untouched, or every later revision in
     /// its history is still disabled (a tag edit, say). A history gap counts as stale: when unsure, the disable
     /// is treated as the user's own.
-    private func syncMarkerIsCurrent(_ db: SQLiteConnection, _ id: UUID, markerRevision: Int, currentRevision: Int) throws -> Bool {
+    private func syncMarkerIsCurrent(_ db: SQLiteConnection, _ id: UUID, markerRevision: Int, currentRevision: Int,
+                                     apply: Bool) throws -> Bool {
         if markerRevision == currentRevision { return true }
         guard currentRevision > markerRevision else { return false }
         let later = try db.rows("SELECT snapshot FROM snippet_revisions WHERE snippet_id = ? AND revision > ? ORDER BY revision",
@@ -365,7 +378,7 @@ extension SnippetStore {
         for snapshot in later {
             guard let decoded = try? JSONDecoder().decode(Snippet.self, from: snapshot), !decoded.enabled else { return false }
         }
-        try db.run("UPDATE sync_conflict_disabled SET revision = ? WHERE record_id = ?", [.int(Int64(currentRevision)), .uuid(id)])
+        if apply { try db.run("UPDATE sync_conflict_disabled SET revision = ? WHERE record_id = ?", [.int(Int64(currentRevision)), .uuid(id)]) }
         return true
     }
 

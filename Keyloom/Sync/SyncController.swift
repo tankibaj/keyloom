@@ -191,15 +191,18 @@ actor SyncController {
         sentBatch = [:]
         status = .syncing
         let state: Data?
+        var reenabledAtStart = false
         do {
             try await store.setSyncAccount(account)
-            _ = try await store.prepareSync(account: account)
+            reenabledAtStart = try await store.prepareSync(account: account).reenabled
             state = try await store.syncEngineState(account: account)
         } catch {
             await abandon(session, because: .localStorage)
             return
         }
         guard self.session === session else { return }
+        // The library loaded before sync started; a snippet turned back on by preparing must reach it.
+        if reenabledAtStart { await onLibraryChanged() }
         do {
             try await adapter.start(session: session, state: state)
         } catch {
@@ -326,7 +329,9 @@ actor SyncController {
         defer { leaveCallback() }
         let changes: [OutgoingChange]
         do {
-            changes = try await store.nextOutgoing(account: session.account, limit: limit)
+            let batch = try await store.nextOutgoingBatch(account: session.account, limit: limit)
+            changes = batch.changes
+            if batch.libraryChanged { await onLibraryChanged() }
         } catch {
             problem = .localStorage
             return []
@@ -374,7 +379,7 @@ actor SyncController {
         case .remoteDataReset:
             do {
                 try await store.resetSyncMetadata(account: account)
-                _ = try await store.prepareSync(account: account)
+                if try await store.prepareSync(account: account).reenabled { await onLibraryChanged() }
             } catch { problem = .localStorage }
             return .syncAgain
         case .accountChanged(let cloud):
