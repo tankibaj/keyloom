@@ -55,6 +55,16 @@ struct EditorView: View {
                         Toggle("Expand automatically", isOn: $editor.draft.enabled)
                     }
                     if let hint = editor.keywordHint { Text(hint).font(.caption).foregroundStyle(.secondary) }
+                    ForEach(editor.keywordFeedback.conflicts, id: \.self) { message in
+                        Label(message + " Change the keyword or turn off Expand automatically to save.", systemImage: "exclamationmark.octagon.fill")
+                            .font(.caption).foregroundStyle(.red)
+                    }
+                    ForEach(editor.keywordFeedback.warnings, id: \.self) { message in
+                        Label(message, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .task(id: KeywordKey(keyword: editor.draft.keyword, enabled: editor.draft.enabled)) {
+                    await editor.refreshKeywordFeedback()
                 }
             }
             GridRow {
@@ -127,20 +137,39 @@ struct EditorView: View {
     }
 
     private var preview: some View {
-        GroupBox("Preview") {
-            Group {
+        GroupBox("Preview and Try Expansion") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(editor.argumentRequirements, id: \.name) { requirement in
+                    sampleField(requirement)
+                }
                 switch editor.preview {
                 case .rendered(let rendered):
                     Text(PreviewText.attributed(rendered)).textSelection(.enabled)
                 case .unavailable(let message):
-                    Text(message).foregroundStyle(.secondary)
+                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(4)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Preview")
+        .accessibilityLabel("Preview and Try Expansion")
+    }
+
+    /// A choice list for arguments with options, free text otherwise; the value is a sample and is never saved.
+    @ViewBuilder
+    private func sampleField(_ requirement: ArgumentRequirement) -> some View {
+        let sample = Binding(
+            get: { editor.sampleArguments[requirement.name] ?? requirement.defaultValue ?? requirement.choices.first ?? "" },
+            set: { editor.sampleArguments[requirement.name] = $0 })
+        if requirement.choices.isEmpty {
+            TextField("Sample for \(requirement.name)", text: sample, prompt: Text("‹\(requirement.name)›"))
+                .textFieldStyle(.roundedBorder)
+        } else {
+            Picker("Sample for \(requirement.name)", selection: sample) {
+                ForEach(requirement.choices, id: \.self) { Text($0).tag($0) }
+            }
+        }
     }
 
     private var argumentSheet: some View {
@@ -167,6 +196,11 @@ struct EditorView: View {
         .padding(20)
         .frame(width: 380)
     }
+}
+
+private struct KeywordKey: Hashable {
+    let keyword: String
+    let enabled: Bool
 }
 
 extension SnippetIcon {

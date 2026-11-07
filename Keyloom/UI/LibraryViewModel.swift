@@ -1,13 +1,13 @@
 import Foundation
 import Observation
 
-/// Sidebar rows; each maps to a `LibraryFilter`.
+/// Sidebar rows; each maps to a `LibraryFilter`, except the trash, which lists `deletedRows` instead.
 enum SidebarItem: Hashable, Sendable {
-    case all, recentlyUsed, pinned, tag(String)
+    case all, recentlyUsed, pinned, tag(String), recentlyDeleted
 
     var filter: LibraryFilter {
         switch self {
-        case .all: .all
+        case .all, .recentlyDeleted: .all
         case .recentlyUsed: .recentlyUsed
         case .pinned: .pinned
         case .tag(let tag): .tag(tag)
@@ -49,8 +49,17 @@ struct SnippetRow: Identifiable, Equatable, Sendable {
     }
 }
 
+struct DeletedRow: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let name: String
+    let icon: SnippetIcon
+    let enabled: Bool
+    let deletedAt: Date
+}
+
 /// Why the list is empty. Each case has a keyboard-reachable way out in the view.
 enum LibraryEmptyState: Equatable, Sendable {
+    case emptyTrash
     case emptyLibrary
     case noResults(query: String)
     case emptyFilter(SidebarItem)
@@ -70,9 +79,12 @@ final class LibraryViewModel {
     private(set) var rows: [SnippetRow] = []
     private(set) var tags: [TagSummary] = []
     private(set) var counts = SidebarCounts()
+    private(set) var deletedRows: [DeletedRow] = []
     private(set) var emptyState: LibraryEmptyState?
     /// Set when an action fails; the view shows it in an alert. Never contains snippet text.
     var errorMessage: String?
+    /// A non-error outcome worth saying, such as a snippet restored with expansion off.
+    var notice: String?
 
     @ObservationIgnored private var pending: Task<Void, Never>?
     @ObservationIgnored private var lastDeleted: UUID?
@@ -86,11 +98,14 @@ final class LibraryViewModel {
     func refresh() async {
         let all = await library.allSnippets()
         let tags = await library.tags()
-        let outcome = await library.search(query: query.trimmingCharacters(in: .whitespacesAndNewlines), filter: sidebarItem.filter)
-        // A newer query or filter arrived while the library answered.
-        guard !Task.isCancelled else { return }
         self.tags = tags
         counts = SidebarCounts(all: all.count, recentlyUsed: all.filter { $0.lastUsedAt != nil }.count, pinned: all.filter(\.pinned).count)
+        if sidebarItem == .recentlyDeleted {
+            await refreshDeleted()
+            return
+        }
+        deletedRows = []
+        let outcome = await library.search(query: query.trimmingCharacters(in: .whitespacesAndNewlines), filter: sidebarItem.filter)
         switch outcome {
         case .results(let hits):
             rows = hits.map { SnippetRow($0.snippet) }
@@ -102,6 +117,13 @@ final class LibraryViewModel {
             rows = []
             emptyState = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .emptyFilter(sidebarItem) : .noResults(query: query)
         }
+    }
+
+    private func refreshDeleted() async {
+        rows = []
+        guard let deleted = await attempt({ try await library.deletedSnippets() }) else { return }
+        deletedRows = deleted.map { DeletedRow(id: $0.snippet.id, name: $0.snippet.name, icon: $0.snippet.icon, enabled: $0.snippet.enabled, deletedAt: $0.deletedAt) }
+        emptyState = deletedRows.isEmpty ? .emptyTrash : nil
     }
 
     /// Follows commits made elsewhere (the editor, later sync and the picker). Ends when the library closes.
@@ -151,6 +173,17 @@ final class LibraryViewModel {
         undoManager?.setActionName("Delete Snippet")
         await refresh()
         if selection == id { await select(neighbor) }
+    }
+
+    /// Recover from Recently Deleted. A keyword another snippet took meanwhile comes back with expansion off.
+    func restoreDeleted(id: UUID) async {
+        notice = nil
+        let wasEnabled = deletedRows.first { $0.id == id }?.enabled
+        guard let restored = await attempt({ try await library.restore(id: id) }) else { return }
+        if wasEnabled == true, !restored.enabled, let keyword = restored.keyword {
+            notice = "“\(restored.name)” is back with expansion off: another snippet now uses \(keyword)."
+        }
+        await refresh()
     }
 
     func undoLastDelete() async {

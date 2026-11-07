@@ -33,6 +33,9 @@ struct SidebarView: View {
                     }
                 }
             }
+            Section {
+                Label("Recently Deleted", systemImage: "trash").tag(SidebarItem.recentlyDeleted)
+            }
         }
         .accessibilityLabel("Library navigation")
         .navigationSplitViewColumnWidth(min: 170, ideal: 200, max: 280)
@@ -77,24 +80,60 @@ struct SnippetListView: View {
 
     var body: some View {
         List(selection: Binding<UUID?>(get: { library.selection }, set: select)) {
-            ForEach(library.rows) { row in
-                SnippetRowView(row: row)
-                    .tag(row.id)
-                    .contextMenu { SnippetActions(library: library, id: row.id, pinned: row.pinned) }
+            if library.sidebarItem == .recentlyDeleted {
+                ForEach(library.deletedRows) { row in DeletedRowView(row: row, library: library) }
+            } else {
+                ForEach(library.rows) { row in
+                    SnippetRowView(row: row)
+                        .tag(row.id)
+                        .contextMenu { SnippetActions(library: library, id: row.id, pinned: row.pinned) }
+                }
             }
         }
-        .accessibilityLabel("Snippets")
+        .accessibilityLabel(library.sidebarItem == .recentlyDeleted ? "Recently deleted snippets" : "Snippets")
         .onDeleteCommand {
-            if let id = library.selection { Task { await library.delete(id: id) } }
+            if library.sidebarItem != .recentlyDeleted, let id = library.selection { Task { await library.delete(id: id) } }
         }
         .overlay {
             if let state = library.emptyState {
                 LibraryEmptyView(state: state, library: library, newSnippet: newSnippet)
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            if let notice = library.notice {
+                Text(notice)
+                    .font(.callout)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.bar)
+                    .accessibilityAddTraits(.isStaticText)
+                    .onAppear { AccessibilityNotification.Announcement(notice).post() }
+            }
+        }
         .onAppear { library.undoManager = undoManager }
         .onChange(of: undoManager) { _, manager in library.undoManager = manager }
         .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
+    }
+}
+
+struct DeletedRowView: View {
+    let row: DeletedRow
+    let library: LibraryViewModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            SnippetIconView(icon: row.icon).font(.title3).frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.name).lineLimit(1)
+                Text("Deleted \(row.deletedAt.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button("Restore") { Task { await library.restoreDeleted(id: row.id) } }
+                .accessibilityLabel("Restore \(row.name)")
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .contextMenu { Button("Restore") { Task { await library.restoreDeleted(id: row.id) } } }
     }
 }
 
@@ -119,6 +158,9 @@ struct LibraryEmptyView: View {
 
     var body: some View {
         switch state {
+        case .emptyTrash:
+            ContentUnavailableView("Nothing Deleted", systemImage: "trash",
+                                   description: Text("Deleted snippets stay here so you can bring them back."))
         case .emptyLibrary:
             ContentUnavailableView {
                 Label("No Snippets Yet", systemImage: "text.badge.plus")

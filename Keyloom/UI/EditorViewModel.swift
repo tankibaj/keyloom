@@ -33,6 +33,16 @@ struct SnippetDraft: Equatable {
     }
 }
 
+/// What the keyword field says about the draft's keyword, judged by the library as if the draft were saved.
+struct KeywordFeedback: Equatable {
+    /// Another enabled snippet owns the keyword; an enabled draft cannot be saved.
+    var conflicts: [String] = []
+    /// Overlaps and ignored keywords: worth knowing, never blocking.
+    var warnings: [String] = []
+
+    var blocksEnabling: Bool { !conflicts.isEmpty }
+}
+
 enum Preview: Equatable {
     case rendered(RenderedSnippet)
     case unavailable(String)
@@ -53,6 +63,10 @@ final class EditorViewModel {
     var draft: SnippetDraft
     private(set) var baseline: SnippetDraft
     var errorMessage: String?
+    private(set) var keywordFeedback = KeywordFeedback()
+    /// Try Expansion: values the user typed for arguments; the rest fall back to default, first choice, then a stand-in.
+    var sampleArguments: [String: String] = [:]
+    @ObservationIgnored private let draftID = UUID()
     @ObservationIgnored private let environment: @MainActor () -> RenderEnvironment
 
     /// `environment` supplies the clock, locale and UUIDs for the preview; the clipboard is never read for it.
@@ -72,7 +86,49 @@ final class EditorViewModel {
     }
 
     var isDirty: Bool { draft != baseline }
-    var canSave: Bool { isDirty && !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var canSave: Bool {
+        isDirty && !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !(draft.enabled && keywordFeedback.blocksEnabling)
+    }
+
+    var argumentRequirements: [ArgumentRequirement] { TemplateRenderer.requiredArguments(in: draft.body) }
+
+    /// Asks the library about the draft's keyword. Call when the keyword or the enabled switch changes.
+    func refreshKeywordFeedback() async {
+        guard draft.enabled, let keyword = draft.normalizedKeyword else {
+            keywordFeedback = KeywordFeedback()
+            return
+        }
+        let id: UUID
+        if case .existing(let existing) = target { id = existing } else { id = draftID }
+        let probe = Snippet(id: id, name: draft.name, icon: draft.icon, keyword: keyword, template: draft.body, createdAt: Date())
+        let diagnostics = await library.keywordDiagnostics(for: probe)
+        var names: [UUID: String] = [:]
+        let others = Set(diagnostics.conflicts.flatMap(\.snippetIDs) + diagnostics.overlaps.flatMap { $0.shorterSnippetIDs + $0.longerSnippetIDs }).subtracting([id])
+        for other in others { names[other] = await library.snippet(id: other)?.name }
+        // The user kept typing while the library answered; the newer call owns the result.
+        guard draft.enabled, draft.normalizedKeyword == keyword else { return }
+        func list(_ ids: [UUID]) -> String { ids.filter { $0 != id }.compactMap { names[$0] }.map { "“\($0)”" }.joined(separator: ", ") }
+        var feedback = KeywordFeedback()
+        for conflict in diagnostics.conflicts {
+            feedback.conflicts.append("\(list(conflict.snippetIDs)) already expands from \(conflict.keyword).")
+        }
+        for overlap in diagnostics.overlaps {
+            let thisIsShorter = overlap.shorterSnippetIDs.contains(id)
+            let other = list(thisIsShorter ? overlap.longerSnippetIDs : overlap.shorterSnippetIDs)
+            switch (overlap.kind, thisIsShorter) {
+            case (.prefix, true), (.contains, true):
+                feedback.warnings.append("“\(overlap.shorter)” completes first while typing “\(overlap.longer)” (\(other)), so that keyword can never be typed.")
+            case (.prefix, false), (.contains, false):
+                feedback.warnings.append("“\(overlap.longer)” can never be typed: “\(overlap.shorter)” (\(other)) completes first.")
+            case (.suffix, _):
+                feedback.warnings.append("“\(overlap.shorter)” also completes at the end of “\(overlap.longer)”; \(thisIsShorter ? "the longer keyword (\(other)) wins there" : "“\(overlap.shorter)” (\(other)) still fires after other text").")
+            }
+        }
+        if !diagnostics.oversizeKeywordSnippetIDs.isEmpty {
+            feedback.warnings.append("Keywords longer than \(KeywordIndex.maxKeywordScalars) characters are ignored.")
+        }
+        keywordFeedback = feedback
+    }
 
     /// Suggests, never requires: `::` keeps ordinary words from expanding by accident.
     var keywordHint: String? {
@@ -83,7 +139,9 @@ final class EditorViewModel {
     var preview: Preview {
         let body = draft.body
         let requirements = TemplateRenderer.requiredArguments(in: body)
-        let samples = Dictionary(uniqueKeysWithValues: requirements.map { ($0.name, $0.defaultValue ?? $0.choices.first ?? "‹\($0.name)›") })
+        let samples = Dictionary(uniqueKeysWithValues: requirements.map {
+            ($0.name, sampleArguments[$0.name] ?? $0.defaultValue ?? $0.choices.first ?? "‹\($0.name)›")
+        })
         do {
             switch try library.preview(for: body, arguments: samples, environment: environment()) {
             case .rendered(let rendered): return .rendered(rendered)
@@ -98,7 +156,11 @@ final class EditorViewModel {
     func save() async -> Bool {
         errorMessage = nil
         guard canSave else {
-            if draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errorMessage = "Give the snippet a name before saving." }
+            if draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                errorMessage = "Give the snippet a name before saving."
+            } else if draft.enabled, let conflict = keywordFeedback.conflicts.first {
+                errorMessage = conflict
+            }
             return false
         }
         do {
@@ -124,6 +186,7 @@ final class EditorViewModel {
             return true
         } catch {
             errorMessage = UserMessage.describe(error)
+            if case StoreError.keywordConflict = error { await refreshKeywordFeedback() }
             return false
         }
     }
