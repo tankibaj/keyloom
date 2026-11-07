@@ -21,6 +21,7 @@ struct KeyloomApp: App {
                     environment.model.quitAction = { NSApp.terminate(nil) }
                 }
         }
+        .windowResizability(.contentMinSize)
         .commands { LibraryCommands(model: environment.model) }
         MenuBarExtra {
             if let menuBar = environment.services?.menuBar {

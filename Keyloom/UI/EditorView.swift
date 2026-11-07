@@ -57,7 +57,7 @@ struct EditorView: View {
                             .font(.body.monospaced())
                             .textFieldStyle(.roundedBorder)
                             .accessibilityLabel("Expansion keyword")
-                        Toggle("Expand automatically", isOn: $editor.draft.enabled)
+                        Toggle("Expand automatically", isOn: $editor.draft.enabled).lineLimit(1)
                     }
                     if let hint = editor.keywordHint { Text(hint).font(.caption).foregroundStyle(.secondary) }
                     ForEach(editor.keywordFeedback.conflicts, id: \.self) { message in
@@ -81,7 +81,15 @@ struct EditorView: View {
         }
     }
 
+    /// The full bar when it fits; otherwise the placeholder and rewrite menus shrink to their icons, so nothing is clipped.
     private var formattingBar: some View {
+        ViewThatFits(in: .horizontal) {
+            formattingBar(compact: false)
+            formattingBar(compact: true)
+        }
+    }
+
+    private func formattingBar(compact: Bool) -> some View {
         HStack(spacing: 6) {
             styleToggle("Bold", systemImage: "bold", style: .bold, key: "b")
             styleToggle("Italic", systemImage: "italic", style: .italic, key: "i")
@@ -90,7 +98,7 @@ struct EditorView: View {
             kindToggle("Paragraph", systemImage: "text.alignleft", kind: .plain)
             kindToggle("Numbered List", systemImage: "list.number", kind: .numbered)
             kindToggle("Bulleted List", systemImage: "list.bullet", kind: .bullet)
-            Spacer()
+            Spacer(minLength: 0)
             Menu {
                 placeholderButton("Date", .date(format: nil))
                 placeholderButton("Date as yyyy-MM-dd", .date(format: "yyyy-MM-dd"))
@@ -106,8 +114,10 @@ struct EditorView: View {
             } label: {
                 Label("Insert Placeholder", systemImage: "curlybraces")
             }
+            .compactLabel(compact)
+            .help("Insert Placeholder")
             .fixedSize()
-            if let assistance = editor.assistance, assistance.isOffered { AssistanceMenu(assistance: assistance) }
+            if let assistance = editor.assistance, assistance.isOffered { AssistanceMenu(assistance: assistance, compact: compact) }
         }
     }
 

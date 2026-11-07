@@ -1,5 +1,15 @@
 import SwiftUI
 
+/// The smallest library window: wide enough for the sidebar, the list and the editor with its toolbar.
+enum LibraryWindowMetrics {
+    static let minimumSize = CGSize(width: 860, height: 520)
+
+    /// A frame restored from an earlier session may be smaller than the content; it is grown, never shrunk.
+    static func clamped(_ size: CGSize) -> CGSize {
+        CGSize(width: max(size.width, minimumSize.width), height: max(size.height, minimumSize.height))
+    }
+}
+
 /// The single library window: opening and failure states, then sidebar, list and detail.
 struct LibraryWindow: View {
     @Bindable var model: AppModel
@@ -21,7 +31,7 @@ struct LibraryWindow: View {
                 LibrarySplitView(model: model, library: library)
             }
         }
-        .frame(minWidth: 860, minHeight: 520)
+        .frame(minWidth: LibraryWindowMetrics.minimumSize.width, minHeight: LibraryWindowMetrics.minimumSize.height)
         .background(WindowCloseGuardInstaller(model: model))
         .task { await model.open() }
     }

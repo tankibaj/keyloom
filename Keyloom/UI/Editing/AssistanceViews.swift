@@ -4,6 +4,8 @@ import SwiftUI
 /// ready; items stay disabled until some text is selected.
 struct AssistanceMenu: View {
     let assistance: AssistanceEditorModel
+    /// Icon only, for a narrow editor; the accessibility name and tooltip stay.
+    var compact = false
 
     var body: some View {
         Menu {
@@ -17,6 +19,7 @@ struct AssistanceMenu: View {
         } label: {
             Label("Rewrite Selection", systemImage: "wand.and.stars")
         }
+        .compactLabel(compact)
         .fixedSize()
         .disabled(!assistance.canRequest)
         .help(assistance.canRequest ? "Proofread, shorten or change the tone of the selected words" : "Select some words first")

@@ -44,7 +44,8 @@ final class WindowCloseGuard: NSObject, NSWindowDelegate {
     override func forwardingTarget(for selector: Selector!) -> Any? { original }
 }
 
-/// Invisible view that installs the guard on its window and tells the model how to close it afterwards.
+/// Invisible view that installs the guard on its window, tells the model how to close it afterwards, and gives the
+/// window its minimum size.
 struct WindowCloseGuardInstaller: NSViewRepresentable {
     let model: AppModel
 
@@ -70,6 +71,10 @@ struct WindowCloseGuardInstaller: NSViewRepresentable {
             self.closeGuard = closeGuard
             window.delegate = closeGuard
             model.closeWindowAction = { [weak window] in window?.close() }
+            // SwiftUI's own minimum does not hold for a frame restored at launch: enforce it on the window itself.
+            window.contentMinSize = LibraryWindowMetrics.minimumSize
+            let content = window.contentRect(forFrameRect: window.frame).size
+            if content != LibraryWindowMetrics.clamped(content) { window.setContentSize(LibraryWindowMetrics.clamped(content)) }
         }
     }
 }

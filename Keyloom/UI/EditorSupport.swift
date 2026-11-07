@@ -56,3 +56,11 @@ enum PreviewText {
         return result
     }
 }
+
+extension View {
+    /// Title and icon, or the icon alone in a narrow editor (the label stays the accessibility name).
+    @ViewBuilder
+    func compactLabel(_ compact: Bool) -> some View {
+        if compact { labelStyle(.iconOnly) } else { labelStyle(.titleAndIcon) }
+    }
+}
