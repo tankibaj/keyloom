@@ -143,3 +143,67 @@ final class FakePasteKeys: PasteKeyPosting {
         return succeeds
     }
 }
+
+@MainActor
+final class FakeHotKeys: HotKeyRegistering {
+    var results: [ShortcutConfig: HotKeyRegistration] = [:]
+    private(set) var registered: ShortcutConfig?
+    private(set) var registerCalls: [ShortcutConfig] = []
+    private var onPress: (@MainActor () -> Void)?
+
+    func register(_ config: ShortcutConfig, onPress: @escaping @MainActor () -> Void) -> HotKeyRegistration {
+        registerCalls.append(config)
+        let result = results[config] ?? .registered
+        if result == .registered {
+            registered = config
+            self.onPress = onPress
+        }
+        return result
+    }
+
+    func unregister() {
+        registered = nil
+        onPress = nil
+    }
+
+    func press() { onPress?() }
+}
+
+@MainActor
+final class FakeTap: EventTapControlling {
+    var allowsStart = true
+    private(set) var isRunning = false
+    private(set) var startCount = 0
+
+    func start() -> Bool {
+        startCount += 1
+        isRunning = allowsStart
+        return allowsStart
+    }
+
+    func stop() { isRunning = false }
+}
+
+@MainActor
+final class FakePrompter: ArgumentPrompting {
+    var answers: [String: String]?
+    var onPrompt: (() -> Void)?
+    private(set) var requests: [[ArgumentRequirement]] = []
+
+    func promptForArguments(for snippetID: UUID, requirements: [ArgumentRequirement]) async -> [String: String]? {
+        requests.append(requirements)
+        onPrompt?()
+        return answers
+    }
+}
+
+@MainActor
+final class FakePicker: PickerPresenting {
+    var onPresent: (() -> Void)?
+    private(set) var presented: [CapturedDestination?] = []
+
+    func presentPicker(destination: CapturedDestination?) {
+        presented.append(destination)
+        onPresent?()
+    }
+}

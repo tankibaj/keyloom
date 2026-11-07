@@ -4,7 +4,7 @@ import AppKit
 typealias PasteboardItems = [[String: Data]]
 
 @MainActor
-protocol PasteboardAccess: AnyObject {
+protocol PasteboardAccess: AnyObject, Sendable {
     var changeCount: Int { get }
     /// The current text, for `{clipboard}` rendering.
     func plainText() -> String?

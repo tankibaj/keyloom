@@ -63,6 +63,11 @@ final class TargetBinder {
         }
     }
 
+    /// Best effort after the user cancelled Keyloom's own prompt: hand focus back to where they were typing.
+    func returnFocus(to target: BoundTarget) async {
+        _ = await destination.activate(target.snapshot.token)
+    }
+
     /// Binds the caret of the focused field (picker route): an empty range, so nothing is replaced.
     func bindCaret() -> Result<BoundTarget, Refusal> {
         switch readable() {
