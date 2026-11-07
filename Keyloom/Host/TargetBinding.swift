@@ -86,7 +86,8 @@ final class TargetBinder {
         return nil
     }
 
-    private func guardrails() -> Refusal? {
+    /// Permissions and secure input, read now. Checked at every point of use, never cached.
+    func guardrails() -> Refusal? {
         if !permissions.current().inputReady { return .failedClosed(.permissionRevoked) }
         if environment.isSecureInputActive { return .failedClosed(.secureInput) }
         return nil
