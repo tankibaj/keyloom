@@ -3,6 +3,7 @@ import XCTest
 @MainActor
 final class SmokeJourneyTests: KeyloomUITestCase {
     func testEmptyLibraryThenCreateAndSearchASnippet() throws {
+        try launchApp()
         let window = libraryWindow
         XCTAssertTrue(window.staticTexts["No Snippets Yet"].waitForExistence(timeout: 10))
         attachScreenshot("empty library")
@@ -24,6 +25,7 @@ final class SmokeJourneyTests: KeyloomUITestCase {
     }
 
     func testSettingsOpenWithCommandCommaAndEveryTabRenders() throws {
+        try launchApp()
         _ = libraryWindow
         app.typeKey(",", modifierFlags: .command)
         let settings = app.windows.matching(NSPredicate(format: "title IN {'General','Expansion','Sync & Backups','Writing Assistance','Keyloom Settings'}")).firstMatch
@@ -45,6 +47,7 @@ final class SmokeJourneyTests: KeyloomUITestCase {
     }
 
     func testPickerOpensFromTheMenuBarAndCopyWorksWithoutAnInsertTarget() throws {
+        try launchApp()
         _ = libraryWindow
         let item = app.menuBars.statusItems.firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 10), "menu bar item missing")

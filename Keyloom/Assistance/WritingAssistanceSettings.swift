@@ -83,6 +83,7 @@ struct WritingAssistanceSettingsView: View {
             Section {
                 Toggle("Use on-device writing assistance", isOn: $model.assistanceEnabled)
                     .disabled(model.togglesLocked)
+                    .accessibilityIdentifier("settings.assistance.toggle")
                 Text(AssistanceCopy.assistanceExplanation).foregroundStyle(.secondary)
                 Text(model.assistanceStatus)
             } header: {
@@ -91,6 +92,7 @@ struct WritingAssistanceSettingsView: View {
             Section {
                 Toggle("Allow system Writing Tools", isOn: $model.systemWritingToolsEnabled)
                     .disabled(model.togglesLocked)
+                    .accessibilityIdentifier("settings.assistance.writingTools")
                 Text(AssistanceCopy.writingToolsDisclosure).foregroundStyle(.secondary)
                 Text(model.writingToolsStatus)
             } header: {

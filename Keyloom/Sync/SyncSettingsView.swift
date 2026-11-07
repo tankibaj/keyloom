@@ -15,6 +15,7 @@ struct SyncSettingsView: View {
             Toggle("Sync snippets through iCloud on this Mac", isOn: Binding(
                 get: { model.isEnabled },
                 set: { newValue in Task { await model.setEnabled(newValue) } }))
+            .accessibilityIdentifier("settings.sync.toggle")
             .task { await model.observe() }
 
             VStack(alignment: .leading, spacing: 4) {
