@@ -46,9 +46,16 @@ extension Migrations {
 
 extension Migrations {
     /// Remembers the revision at which sync turned a snippet off, so a later edit that enabled it is detected and
-    /// its marker dropped. Down note: v4 adds one column; undo it by restoring the pre-migration backup. Existing
-    /// markers get revision 0, which never matches, so they are dropped as stale on first use (safe).
+    /// its marker dropped. Existing (v3) markers are backfilled with the snippet's current revision while it is
+    /// still disabled (an edit that left it disabled does not matter), so a forced disable stays recognized; a marker
+    /// whose snippet was enabled, deleted or purged since gets 0, which never matches, and is dropped as stale.
+    /// Down note: v4 adds one column; undo it by restoring the pre-migration backup.
     static let v4 = Migration(version: 4) { database in
-        try database.execute("ALTER TABLE sync_conflict_disabled ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
+        try database.execute("""
+        ALTER TABLE sync_conflict_disabled ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+        UPDATE sync_conflict_disabled SET revision = COALESCE(
+            (SELECT s.revision FROM snippets s WHERE s.id = sync_conflict_disabled.record_id
+             AND s.enabled = 0 AND s.deleted_at IS NULL), 0);
+        """)
     }
 }
