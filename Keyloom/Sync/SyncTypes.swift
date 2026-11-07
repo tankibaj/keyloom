@@ -76,7 +76,7 @@ protocol SyncEngineAdapter: Sendable {
     func syncNow() async throws
 }
 
-enum UnavailableReason: Sendable, Equatable {
+enum SyncUnavailableReason: Sendable, Equatable {
     /// iCloud is restricted on this Mac: sync is unavailable, the local library is not.
     case restricted
     case temporarilyUnavailable
@@ -96,7 +96,7 @@ enum SyncStatus: Sendable, Equatable {
     case off
     case checkingAccount
     case signedOut
-    case unavailable(UnavailableReason)
+    case unavailable(SyncUnavailableReason)
     case syncing
     case upToDate(lastSyncedAt: Date)
     case quotaExceeded
