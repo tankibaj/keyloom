@@ -21,11 +21,11 @@ actor SnippetLibrary {
     nonisolated let keywordMatcher: KeywordMatcher
     nonisolated let changes: AsyncStream<LibraryChange>
 
-    private let store: SnippetStore
+    let store: SnippetStore
     private let keywordIndexStore = KeywordIndexStore()
-    private let now: @Sendable () -> Date
-    private let makeID: @Sendable () -> UUID
-    private let changeContinuation: AsyncStream<LibraryChange>.Continuation
+    let now: @Sendable () -> Date
+    let makeID: @Sendable () -> UUID
+    let changeContinuation: AsyncStream<LibraryChange>.Continuation
     private var snapshot: [Snippet] = []
     private var unreadable: [UnreadableRecord] = []
     private var searchIndex = SearchIndex(snippets: [])
@@ -207,7 +207,7 @@ actor SnippetLibrary {
         return result
     }
 
-    private func reload() async throws {
+    func reload() async throws {
         issuedTicket += 1
         let ticket = issuedTicket
         let contents = try await store.contents()

@@ -322,7 +322,7 @@ actor SnippetStore {
         return try db.transaction { try body(db) }
     }
 
-    private static func iconValues(_ icon: SnippetIcon) -> [SQLValue] {
+    static func iconValues(_ icon: SnippetIcon) -> [SQLValue] {
         switch icon {
         case .emoji(let value): [.text("emoji"), .text(value)]
         case .symbol(let value): [.text("symbol"), .text(value)]
@@ -330,9 +330,9 @@ actor SnippetStore {
     }
 
     /// NFC, as `ActiveKeyword` indexes it: the one place keywords are normalized for storage.
-    private static func canonical(_ keyword: String?) -> String? { keyword?.precomposedStringWithCanonicalMapping }
+    static func canonical(_ keyword: String?) -> String? { keyword?.precomposedStringWithCanonicalMapping }
 
-    private static func validate(_ snippet: Snippet) throws {
+    static func validate(_ snippet: Snippet) throws {
         func isBlank(_ text: String) -> Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         if isBlank(snippet.name) { throw KeyloomError.invalidSnippet(field: "name", reason: "must not be blank") }
         if let keyword = snippet.keyword, isBlank(keyword) {
@@ -401,7 +401,7 @@ actor SnippetStore {
         return result
     }
 
-    private func replaceTags(_ db: SQLiteConnection, of snippet: Snippet) throws {
+    func replaceTags(_ db: SQLiteConnection, of snippet: Snippet) throws {
         try db.run("DELETE FROM snippet_tags WHERE snippet_id = ?", [.uuid(snippet.id)])
         for (position, tag) in snippet.tags.enumerated() {
             try db.run("INSERT INTO snippet_tags (snippet_id, tag, position) VALUES (?, ?, ?)",
@@ -410,7 +410,7 @@ actor SnippetStore {
     }
 
     /// Appends the snapshot for the snippet's current revision and prunes the oldest beyond the cap.
-    private func recordRevision(_ db: SQLiteConnection, _ snippet: Snippet) throws {
+    func recordRevision(_ db: SQLiteConnection, _ snippet: Snippet) throws {
         try db.run("INSERT INTO snippet_revisions (snippet_id, revision, recorded_at, snapshot) VALUES (?, ?, ?, ?)",
                    [.uuid(snippet.id), .int(Int64(snippet.revision)), .date(now()), .blob(try JSONEncoder().encode(snippet))])
         try db.run("DELETE FROM snippet_revisions WHERE snippet_id = ? AND revision <= ?",
