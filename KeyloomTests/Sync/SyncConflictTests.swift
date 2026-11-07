@@ -146,6 +146,32 @@ final class SyncConflictTests: SyncTestCase {
         XCTAssertEqual(count, 1)
     }
 
+    func testDeletingTheKeywordWinnerOnOneMacTurnsTheLoserBackOnEverywhere() async throws {
+        let first = try makeDevice(idStart: 10_000)
+        let second = try makeDevice(idStart: 20_000)
+        let older = try await first.store.create(makeSnippet(name: "Older", keyword: ";x"))
+        clock.advance(by: 60)
+        let younger = try await second.store.create(makeSnippet(name: "Younger", keyword: ";x"))
+        await first.enableSync()
+        await second.enableSync()
+        await settle(first, second)
+
+        try await first.store.delete(id: older.id)
+        await settle(first, second)
+        await settle(second, first)
+
+        for device in [first, second] {
+            let all = try await device.store.allSnippets()
+            XCTAssertEqual(all.map(\.id), [younger.id])
+            XCTAssertEqual(all.first?.enabled, true, "no duplicate and no dead keyword: the freed keyword works again")
+            let pending = try await device.store.pending(account: account)
+            XCTAssertEqual(pending, [])
+        }
+        XCTAssertEqual(cloud.snippets(account: account)[younger.id]?.enabled, true)
+        let notices = await second.controller.keywordConflictCount()
+        XCTAssertEqual(notices, 0)
+    }
+
     func testEditsToDifferentFieldsOfDifferentSnippetsNeverConflict() async throws {
         let (first, second) = try await pair()
         let one = try await first.store.create(makeSnippet(name: "One", keyword: ";1"))

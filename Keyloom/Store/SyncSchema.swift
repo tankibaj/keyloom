@@ -43,3 +43,12 @@ extension Migrations {
         """)
     }
 }
+
+extension Migrations {
+    /// Remembers the revision at which sync turned a snippet off, so a later edit that enabled it is detected and
+    /// its marker dropped. Down note: v4 adds one column; undo it by restoring the pre-migration backup. Existing
+    /// markers get revision 0, which never matches, so they are dropped as stale on first use (safe).
+    static let v4 = Migration(version: 4) { database in
+        try database.execute("ALTER TABLE sync_conflict_disabled ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
+    }
+}
