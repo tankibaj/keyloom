@@ -36,6 +36,12 @@ class FakeDestination: DestinationAccess {
     var canActivate = true
     var onActivate: ((FocusToken) -> Void)?
     private(set) var activateCount = 0
+    /// Keys the user has typed that the app has not applied yet (apps apply keys after the tap sees them).
+    var pendingKeys: [String] = []
+    /// Non-atomic replace: the world changes after our selection was set and before the write.
+    var afterSelectionSet: (() -> Void)?
+    /// Like Electron or a terminal: accepts the write and does nothing.
+    var ignoresReplace = false
     /// The world changing under the host: runs right before a write reaches the field.
     var beforeWrite: (() -> Void)?
     /// Every mutation asked for; empty means the destination was left alone.
@@ -59,10 +65,28 @@ class FakeDestination: DestinationAccess {
         return canActivate
     }
 
+    /// The app finally applies the oldest pending key at the caret.
+    func applyNextKey() {
+        guard !pendingKeys.isEmpty else { return }
+        splice(NSRange(location: selection?.location ?? 0, length: 0), pendingKeys.removeFirst())
+    }
+
+    /// Like Accessibility: select the range, re-verify, then write. A failed re-verify leaves our selection behind.
     func replace(range: NSRange, with replacement: String, bound: FieldSnapshot) -> WriteResult {
         guard accepts(bound) else { return .destinationChanged }
         writes.append("replace")
-        splice(range, replacement)
+        selection = range
+        afterSelectionSet?()
+        var selected = bound
+        selected.selection = range
+        guard snapshot()?.satisfies(selected) == true else { return .destinationChanged }
+        if !ignoresReplace { splice(range, replacement) }
+        return .written
+    }
+
+    func restoreSelection(_ caret: NSRange, ifSelected selected: NSRange, in token: FocusToken) -> WriteResult {
+        guard self.token == token, selection == selected else { return .destinationChanged }
+        selection = caret
         return .written
     }
 
@@ -97,6 +121,8 @@ final class FakePasteboard: PasteboardAccess {
     private(set) var items: PasteboardItems = []
     private(set) var writeCount = 0
     var isPreservable = true
+    /// Runs right after a snapshot was taken: another app copying in the middle.
+    var onSnapshot: (() -> Void)?
     /// Runs right after our write, before anything else can happen.
     var onWrite: (() -> Void)?
 
@@ -107,7 +133,11 @@ final class FakePasteboard: PasteboardAccess {
     var plain: String? { plainText() }
 
     func plainText() -> String? { items.first?["public.utf8-plain-text"].map { String(decoding: $0, as: UTF8.self) } }
-    func snapshot() -> PasteboardItems? { isPreservable ? items : nil }
+    func snapshot() -> PasteboardItems? {
+        let taken = isPreservable ? items : nil
+        onSnapshot?()
+        return taken
+    }
 
     func write(plain: String, rtf: Data?) -> Int {
         writeCount += 1
@@ -188,11 +218,20 @@ final class FakeTap: EventTapControlling {
 final class FakePrompter: ArgumentPrompting {
     var answers: [String: String]?
     var onPrompt: (() -> Void)?
+    /// Keeps the prompt open until `release()`, so a test can act while it is showing.
+    var holds = false
+    private var continuation: CheckedContinuation<Void, Never>?
     private(set) var requests: [[ArgumentRequirement]] = []
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
 
     func promptForArguments(for snippetID: UUID, requirements: [ArgumentRequirement]) async -> [String: String]? {
         requests.append(requirements)
         onPrompt?()
+        if holds { await withCheckedContinuation { continuation = $0 } }
         return answers
     }
 }

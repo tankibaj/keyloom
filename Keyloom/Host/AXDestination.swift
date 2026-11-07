@@ -83,12 +83,18 @@ final class AXDestination: DestinationAccess {
         return setSelection(range, on: focus.element) ? .written : .failed
     }
 
+    func restoreSelection(_ caret: NSRange, ifSelected selected: NSRange, in token: FocusToken) -> WriteResult {
+        guard let focus = focused(), focus.token == token, selectionRange(focus.element) == selected else { return .destinationChanged }
+        return setSelection(caret, on: focus.element) ? .written : .failed
+    }
+
     func replace(range: NSRange, with text: String, bound: FieldSnapshot) -> WriteResult {
         guard let focus = verified(bound) else { return .destinationChanged }
         guard setSelection(range, on: focus.element) else { return .failed }
         var selected = bound
         selected.selection = range
         // Re-read after our own selection change: the app must hold exactly that selection of exactly that value.
+        // A failure here leaves our selection set; the caller undoes it through `restoreSelection`.
         guard let again = verified(selected) else { return .destinationChanged }
         return AXUIElementSetAttributeValue(again.element, kAXSelectedTextAttribute as CFString, text as CFString) == .success
             ? .written : .failed
