@@ -30,6 +30,24 @@ final class AppEnvironmentTests: LibraryUITestCase {
         XCTAssertEqual(first.host.status.shortcut, .registered(.defaultShortcut))
     }
 
+    func testLibraryWindowRetryStartsHostAfterFirstOpenFails() async throws {
+        var attempts = 0
+        let model = AppModel(dataDirectory: try makeDirectory()) { [self] directory in
+            attempts += 1
+            if attempts == 1 { throw StoreError.closed }
+            return try await openLibrary(at: directory)
+        }
+        let environment = AppEnvironment(model: model, mode: .uiTest, defaults: try isolatedDefaults())
+        await environment.start()
+        guard case .failed = model.phase else { return XCTFail("Expected the first open to fail") }
+
+        await LibraryWindow(environment: environment).openLibrary()
+
+        XCTAssertEqual(attempts, 2)
+        XCTAssertNotNil(model.library)
+        XCTAssertEqual(environment.services?.host.status.shortcut, .registered(.defaultShortcut))
+    }
+
     func testSettingsShareTheEnvironmentDefaultsAndSyncIsTheRealControllerOffByDefault() async throws {
         let defaults = try isolatedDefaults()
         let environment = AppEnvironment(model: AppModel(dataDirectory: try makeDirectory()), mode: .uiTest, defaults: defaults)

@@ -14,7 +14,7 @@ struct KeyloomApp: App {
 
     var body: some Scene {
         Window(AppIdentity.name, id: "library") {
-            LibraryWindow(model: environment.model)
+            LibraryWindow(environment: environment)
                 .onAppear {
                     appDelegate.model = environment.model
                     appDelegate.shutdown = { [environment] in await environment.shutdown() }

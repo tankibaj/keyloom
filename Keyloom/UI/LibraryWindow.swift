@@ -12,7 +12,12 @@ enum LibraryWindowMetrics {
 
 /// The single library window: opening and failure states, then sidebar, list and detail.
 struct LibraryWindow: View {
-    @Bindable var model: AppModel
+    let environment: AppEnvironment
+    private var model: AppModel { environment.model }
+
+    func openLibrary() async {
+        await environment.start()
+    }
 
     var body: some View {
         Group {
@@ -25,7 +30,7 @@ struct LibraryWindow: View {
                 } description: {
                     Text(message)
                 } actions: {
-                    Button("Try Again") { Task { await model.open() } }.keyboardShortcut(.defaultAction)
+                    Button("Try Again") { Task { await openLibrary() } }.keyboardShortcut(.defaultAction)
                 }
             case .ready(_, let library):
                 LibrarySplitView(model: model, library: library)
@@ -33,7 +38,7 @@ struct LibraryWindow: View {
         }
         .frame(minWidth: LibraryWindowMetrics.minimumSize.width, minHeight: LibraryWindowMetrics.minimumSize.height)
         .background(WindowCloseGuardInstaller(model: model))
-        .task { await model.open() }
+        .task { await openLibrary() }
     }
 }
 
