@@ -44,6 +44,28 @@ actor SnippetLibrary {
         try await reload()
     }
 
+    /// Builds the library on a store that already exists, so the library and `SyncController` share one
+    /// connection and one journal account: edits made here land in the outbox under the account sync is running
+    /// for. Hand `syncStore` to the controller and `reloadAfterSync` as its `onLibraryChanged`.
+    init(store: SnippetStore) async throws {
+        self.store = store
+        now = store.now
+        makeID = store.makeID
+        keywordMatcher = KeywordMatcher(store: keywordIndexStore)
+        (changes, changeContinuation) = AsyncStream.makeStream(of: LibraryChange.self)
+        try await reload()
+    }
+
+    /// The store behind this library, for `SyncController`. Do not open a second store on the same file.
+    nonisolated var syncStore: SnippetStore { store }
+
+    /// For `SyncController`'s `onLibraryChanged`: sync changed the stored library, so rebuild the snapshot and
+    /// indexes and tell observers. A failed reload leaves the previous snapshot; the next change retries.
+    func reloadAfterSync() async {
+        guard (try? await reload()) != nil else { return }
+        changeContinuation.yield(.remoteChangesApplied)
+    }
+
     /// Closes the database and finishes `changes`. Later mutations throw `StoreError.closed`.
     func close() async {
         await store.close()

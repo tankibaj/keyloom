@@ -153,6 +153,50 @@ final class SyncReplayTests: SyncTestCase {
         XCTAssertEqual(stillPending.count, 1)
     }
 
+    func testATransientStoreErrorWhileApplyingARemoteChangeIsReplayedNotLost() async throws {
+        let first = try makeDevice(idStart: 10_000)
+        let second = try makeDevice(idStart: 20_000)
+        await first.enableSync()
+        await second.enableSync()
+        let arriving = try await first.store.create(makeSnippet(name: "Arrives later", keyword: ";l"))
+        await first.sync()
+        let tokenBefore = try await second.store.syncEngineState(account: account)
+
+        let raw = try RawDatabase(second.directory.appendingPathComponent("keyloom.sqlite"))
+        try raw.execute("CREATE TRIGGER fail_insert BEFORE INSERT ON snippets BEGIN SELECT RAISE(ABORT, 'disk full'); END")
+        await second.sync()
+
+        let status = await second.controller.status
+        XCTAssertEqual(status, .failed(.localStorage), "the failure is shown, not hidden behind up to date")
+        let tokenAfter = try await second.store.syncEngineState(account: account)
+        XCTAssertEqual(tokenAfter, tokenBefore, "the engine token did not move past a change that was not applied")
+        let missing = try await second.store.snippet(id: arriving.id)
+        XCTAssertNil(missing)
+
+        try raw.execute("DROP TRIGGER fail_insert")
+        await second.sync()
+        let replayed = try await second.store.snippet(id: arriving.id)
+        XCTAssertNotNil(replayed, "the next sync fetched the change again")
+        let ok = await second.controller.status
+        XCTAssertEqual(ok, .upToDate(lastSyncedAt: clock.now))
+    }
+
+    func testASnippetTooLargeForCloudKitIsReportedAndOthersStillSync() async throws {
+        let device = try makeDevice()
+        let huge = try await device.store.create(makeSnippet(name: String(repeating: "n", count: 950_000), keyword: ";big"))
+        let small = try await device.store.create(makeSnippet(name: "Small", keyword: ";sm"))
+        await device.enableSync()
+
+        let status = await device.controller.status
+        XCTAssertEqual(status, .failed(.recordTooLarge), "the user can see that something did not sync")
+        XCTAssertEqual(Set(cloud.snippets(account: account).keys), [small.id])
+        let queued = try await device.store.pending(account: account)
+        XCTAssertEqual(queued.map(\.recordID), [huge.id], "kept queued, not lost")
+        XCTAssertEqual(queued.first?.attempts, 1)
+        let local = try await device.store.snippet(id: huge.id)
+        XCTAssertNotNil(local, "local data is untouched")
+    }
+
     // MARK: Tombstones
 
     func testADeletePropagatesOnline() async throws {

@@ -104,6 +104,46 @@ final class SyncConflictTests: SyncTestCase {
             XCTAssertEqual(KeywordConflicts.analyze(all).conflicts, [], "never two enabled snippets with one keyword")
             XCTAssertEqual(all.filter { $0.enabled && $0.keyword == ";dup" }.count, 1)
         }
+        let firstOwner = try await first.store.allSnippets().first { $0.enabled }?.id
+        let secondOwner = try await second.store.allSnippets().first { $0.enabled }?.id
+        XCTAssertNotNil(firstOwner)
+        XCTAssertEqual(firstOwner, secondOwner, "both Macs keep the same snippet enabled")
+    }
+
+    func testTwoMacsConvergeOnTheEarliestSnippetAndALaterTagEditDoesNotFlipIt() async throws {
+        let first = try makeDevice(idStart: 10_000)
+        let second = try makeDevice(idStart: 20_000)
+        let older = try await first.store.create(makeSnippet(name: "Older", keyword: ";x"))
+        clock.advance(by: 60)
+        let younger = try await second.store.create(makeSnippet(name: "Younger", keyword: ";x"))
+        await first.enableSync()
+        await second.enableSync()
+        await settle(first, second)
+
+        for device in [first, second] {
+            let all = try await device.store.allSnippets()
+            XCTAssertEqual(all.filter { $0.enabled && $0.keyword == ";x" }.map(\.id), [older.id], "exactly the earliest copy is on")
+        }
+
+        // The user retags the disabled copy on one Mac; the other Mac must not end up with both off.
+        let found = try await first.store.snippet(id: younger.id)
+        var retagged = try XCTUnwrap(found)
+        retagged.tags = ["fyi"]
+        _ = try await first.store.update(retagged)
+        await settle(first, second)
+        await settle(second, first)
+
+        for device in [first, second] {
+            let all = try await device.store.allSnippets()
+            XCTAssertEqual(all.filter { $0.enabled && $0.keyword == ";x" }.map(\.id), [older.id])
+            let tags = all.first { $0.id == younger.id }?.tags
+            XCTAssertEqual(tags, ["fyi"], "the edit itself still syncs")
+        }
+        XCTAssertEqual(cloud.snippets(account: account)[younger.id]?.enabled, true, "iCloud keeps the user's intent")
+        let notice = try await second.store.keywordConflictDisabledIDs()
+        XCTAssertEqual(notice, [younger.id], "the user can be told which snippet was turned off")
+        let count = await second.controller.keywordConflictCount()
+        XCTAssertEqual(count, 1)
     }
 
     func testEditsToDifferentFieldsOfDifferentSnippetsNeverConflict() async throws {

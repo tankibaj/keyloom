@@ -211,6 +211,8 @@ final class CKSyncEngineAdapter: SyncEngineAdapter, CKSyncEngineDelegate, @unche
     }
 
     /// A refused save either reports what the cloud holds (reconciled like any remote change) or a failure.
+    // TODO(keyloom-wp5): a .zoneNotFound failure (the zone was erased) is only reported as an error today; recreate
+    // the zone and re-send, when live CloudKit testing is possible (needs the iCloud entitlement and a test account).
     private static func saveFailure(_ error: CKError, id: UUID) -> SendOutcome {
         switch error.code {
         case .serverRecordChanged:

@@ -55,7 +55,12 @@ struct RemotePlan: Equatable {
     var dropPending = false
     var base: BaseUpdate
     var outcome: RemoteApplyResult.Outcome
-    var disabledForKeywordConflict = false
+    /// Existing local snippets that lose a keyword to the incoming one and are turned off, locally only.
+    var disable: [UUID] = []
+    /// The incoming snippet itself loses its keyword and is stored turned off, locally only.
+    var storedDisabledForConflict = false
+
+    var disabledForKeywordConflict: Bool { storedDisabledForConflict || !disable.isEmpty }
 }
 
 /// Three-way reconciliation of one record: local state, the cloud's change, and their agreed ancestor.
@@ -64,15 +69,22 @@ struct RemotePlan: Equatable {
 ///   record's ID (so every Mac converges on it) and the local version survives as a new, named snippet that
 ///   syncs like any other. A delete on one side against an edit on the other keeps the delete on the original
 ///   and the edit as a copy.
-/// - A snippet that would duplicate another enabled snippet's keyword is stored disabled. The disable is local:
-///   it is neither pushed over the cloud's record nor applied to the snippet that already owned the keyword.
+/// - Two enabled snippets with one keyword: the earlier-created one keeps it (ties by ID), the same on every Mac.
+///   The loser is turned off locally only (it is neither pushed over the cloud's record nor treated as a user edit;
+///   the store remembers it as conflict-disabled) so every Mac converges on the same single enabled snippet.
 /// - A replay (the cloud repeating what the ancestor already holds) changes nothing.
 enum Reconciler {
     struct Context {
         let now: Date
         let makeID: () -> UUID
         /// Whether an enabled, live snippet other than those listed holds this (canonical) keyword.
-        let isKeywordTaken: (_ keyword: String, _ excluding: Set<UUID>) throws -> Bool
+        /// The enabled, live snippet outside `excluding` that holds this (canonical) keyword, if any.
+        let keywordOwner: (_ keyword: String, _ excluding: Set<UUID>) throws -> KeywordOwner?
+    }
+
+    struct KeywordOwner: Equatable {
+        let id: UUID
+        let createdAt: Date
     }
 
     static func plan(_ change: RemoteChange, local: LocalState?, base: SyncBase?, context: Context) throws -> RemotePlan {
@@ -90,17 +102,18 @@ enum Reconciler {
             return RemotePlan(base: .systemFields(fields), outcome: .unchanged)
         }
         guard let local else {
-            let (stored, disabled) = try adopting(remote, over: nil, context: context)
-            return RemotePlan(local: .save(stored), base: .set(stored, systemFields: fields), outcome: .applied,
-                              disabledForKeywordConflict: disabled)
+            let adoption = try adopting(remote, over: nil, context: context)
+            return RemotePlan(local: .save(adoption.stored), base: .set(remote, systemFields: fields), outcome: .applied,
+                              disable: adoption.displaced, storedDisabledForConflict: adoption.disabled)
         }
         if !local.isDeleted, local.snippet.hasSameSyncedContent(as: remote) {
             return RemotePlan(dropPending: true, base: .set(remote, systemFields: fields), outcome: .unchanged)
         }
-        let (stored, disabled) = try adopting(remote, over: local.snippet, context: context)
+        let adoption = try adopting(remote, over: local.snippet, context: context)
+        let stored = adoption.stored
         guard changedLocally(local, since: base) else {
-            return RemotePlan(local: .save(stored), dropPending: true, base: .set(stored, systemFields: fields),
-                              outcome: .applied, disabledForKeywordConflict: disabled)
+            return RemotePlan(local: .save(stored), dropPending: true, base: .set(remote, systemFields: fields),
+                              outcome: .applied, disable: adoption.displaced, storedDisabledForConflict: adoption.disabled)
         }
         if local.isDeleted {
             // Deleted here, edited there: the delete stays queued; the edit lives on as a copy.
@@ -109,8 +122,9 @@ enum Reconciler {
         }
         let copy = try conflictCopy(of: local.snippet, reserving: stored.enabled ? stored.keyword : nil,
                                 excluding: [local.snippet.id], context: context)
-        return RemotePlan(local: .save(stored), copy: copy, dropPending: true, base: .set(stored, systemFields: fields),
-                          outcome: .conflictCopied(copyID: copy.id), disabledForKeywordConflict: disabled)
+        return RemotePlan(local: .save(stored), copy: copy, dropPending: true, base: .set(remote, systemFields: fields),
+                          outcome: .conflictCopied(copyID: copy.id), disable: adoption.displaced,
+                          storedDisabledForConflict: adoption.disabled)
     }
 
     // MARK: Delete
@@ -138,17 +152,33 @@ enum Reconciler {
         return local.isDeleted || !local.snippet.hasSameSyncedContent(as: agreed)
     }
 
-    /// The remote snippet as this Mac stores it: revision continues the local counter, and an enabled keyword
-    /// another snippet owns turns the snippet off.
-    private static func adopting(_ remote: Snippet, over local: Snippet?, context: Context) throws -> (Snippet, disabled: Bool) {
+    private struct Adoption {
+        let stored: Snippet
+        /// The snippet had to be stored turned off: it loses its keyword to an existing snippet.
+        let disabled: Bool
+        /// Existing snippets that lose their keyword to this one.
+        let displaced: [UUID]
+    }
+
+    /// The remote snippet as this Mac stores it: the revision continues the local counter. When another enabled
+    /// snippet holds the same keyword, the earlier-created one keeps it (ties by ID), so every Mac turns off the
+    /// same snippet; the loser is turned off locally and the cloud's record keeps the user's enabled state.
+    private static func adopting(_ remote: Snippet, over local: Snippet?, context: Context) throws -> Adoption {
         var stored = remote
         stored.revision = (local?.revision ?? 0) + 1
-        var disabled = false
-        if stored.enabled, let keyword = stored.canonicalKeyword, try context.isKeywordTaken(keyword, [stored.id]) {
-            stored.enabled = false
-            disabled = true
+        guard stored.enabled, let keyword = stored.canonicalKeyword,
+              let owner = try context.keywordOwner(keyword, [stored.id]) else {
+            return Adoption(stored: stored, disabled: false, displaced: [])
         }
-        return (stored, disabled)
+        if precedes((stored.createdAt, stored.id), (owner.createdAt, owner.id)) {
+            return Adoption(stored: stored, disabled: false, displaced: [owner.id])
+        }
+        stored.enabled = false
+        return Adoption(stored: stored, disabled: true, displaced: [])
+    }
+
+    private static func precedes(_ lhs: (Date, UUID), _ rhs: (Date, UUID)) -> Bool {
+        lhs.0 != rhs.0 ? lhs.0 < rhs.0 : lhs.1.uuidString < rhs.1.uuidString
     }
 
     /// A new snippet holding `source`'s content. Named so the user can tell where it came from, and disabled
@@ -160,7 +190,7 @@ enum Reconciler {
                            keyword: source.canonicalKeyword, enabled: source.enabled, tags: source.tags, pinned: false,
                            revision: 1, template: source.template, createdAt: context.now)
         if copy.enabled, let keyword = copy.canonicalKeyword,
-           try keyword == reserved || context.isKeywordTaken(keyword, excluding.union([id])) {
+           try keyword == reserved || context.keywordOwner(keyword, excluding.union([id])) != nil {
             copy.enabled = false
         }
         return copy

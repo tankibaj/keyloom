@@ -15,7 +15,7 @@ struct Migration: Sendable {
 /// copy. To undo a step that already shipped, restore the pre-migration backup the runner wrote and run
 /// the previous app version; a step that cannot be undone that way must say so in its own comment.
 enum Migrations {
-    static let all: [Migration] = [v1, v2]
+    static let all: [Migration] = [v1, v2, v3]
 
     /// Initial schema.
     /// Down note: v1 only creates objects, so there is nothing to revert but the whole file. Rolling back

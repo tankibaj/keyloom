@@ -30,7 +30,8 @@ final class SyncStoreTests: StoreTestCase {
 
         let store = try openStore(at: url, backupDirectory: backups)
         let raw = try RawDatabase(url)
-        XCTAssertEqual(try raw.userVersion, 2)
+        XCTAssertEqual(try raw.userVersion, Migrations.all.count)
+        XCTAssertEqual(try raw.count("sync_conflict_disabled"), 0)
         XCTAssertEqual(try raw.count("sync_records"), 0)
         XCTAssertEqual(try raw.count("sync_engine_state"), 0)
         let fetched = try await store.snippet(id: kept.id)
@@ -238,9 +239,10 @@ final class SyncStoreTests: StoreTestCase {
         XCTAssertTrue(pending.contains { $0.recordID == original.id && $0.operation == .delete })
     }
 
-    func testRemoteRecordWithATakenKeywordArrivesDisabledAndLeavesTheLocalOwnerAlone() async throws {
+    func testYoungerRemoteRecordWithATakenKeywordArrivesDisabledAndLeavesTheLocalOwnerAlone() async throws {
         let store = try openStore(at: try databaseURL())
         let owner = try await store.create(makeSnippet(name: "Mine", keyword: ";same"))
+        clock.advance(by: 10)
         let incoming = makeSnippet(name: "Theirs", keyword: ";same")
         let result = try await store.applyRemote(remote(incoming), account: accountA)
         XCTAssertEqual(result.outcome, .applied)
@@ -253,11 +255,60 @@ final class SyncStoreTests: StoreTestCase {
         XCTAssertEqual(analysis.conflicts, [], "no duplicate active keyword after sync")
         let pending = try await store.pending(account: accountA)
         XCTAssertEqual(pending, [], "the forced disable is local; it is not pushed over the remote record")
+        let notices = try await store.keywordConflictDisabledIDs()
+        XCTAssertEqual(notices, [incoming.id], "the user can be told which snippet was turned off")
+    }
+
+    func testOlderRemoteRecordWinsTheKeywordAndTheLocalOwnerIsTurnedOffWithoutBeingPushed() async throws {
+        let store = try openStore(at: try databaseURL())
+        let older = makeSnippet(name: "Older, from the cloud", keyword: ";same")
+        clock.advance(by: 10)
+        try await store.setSyncAccount(accountA)
+        let owner = try await store.create(makeSnippet(name: "Younger, local", keyword: ";same"))
+        let result = try await store.applyRemote(remote(older), account: accountA)
+        XCTAssertTrue(result.disabledForKeywordConflict)
+        XCTAssertTrue(result.libraryChanged)
+        let winner = try await store.snippet(id: older.id)
+        XCTAssertEqual(winner?.enabled, true, "the same snippet wins on every Mac: earliest creation, then ID")
+        let loser = try await store.snippet(id: owner.id)
+        XCTAssertEqual(loser?.enabled, false)
+        let notices = try await store.keywordConflictDisabledIDs()
+        XCTAssertEqual(notices, [owner.id])
+
+        // The loser was never uploaded; when it is, it carries the user's intent (enabled), not the forced state.
+        let outgoing = try await store.nextOutgoing(account: accountA, limit: 10)
+        guard case .save(let sent)? = outgoing.first?.payload else { return XCTFail("expected the loser to be sent") }
+        XCTAssertEqual(sent.id, owner.id)
+        XCTAssertTrue(sent.enabled, "a conflict-forced disable is not a user edit")
+    }
+
+    func testAForcedDisableIsNotQueuedAndAnEditToTheLoserKeepsItsIntent() async throws {
+        let store = try openStore(at: try databaseURL())
+        let older = makeSnippet(name: "Older", keyword: ";same")
+        _ = try await store.applyRemote(remote(older), account: accountA)
+        clock.advance(by: 10)
+        let younger = makeSnippet(name: "Younger", keyword: ";same")
+        _ = try await store.applyRemote(remote(younger, fields: Data("t".utf8)), account: accountA)
+        let loser = try await store.snippet(id: younger.id)
+        XCTAssertEqual(loser?.enabled, false)
+
+        let prepared = try await store.prepareSync(account: accountA)
+        XCTAssertEqual(prepared.enqueued, 0, "the forced disable differs from the ancestor but is not a change to push")
+
+        try await store.setSyncAccount(accountA)
+        var edited = try XCTUnwrap(loser)
+        edited.tags = ["edited"]
+        _ = try await store.update(edited)
+        let outgoing = try await store.nextOutgoing(account: accountA, limit: 10)
+        guard case .save(let sent)? = outgoing.first?.payload else { return XCTFail("expected a save") }
+        XCTAssertEqual(sent.tags, ["edited"])
+        XCTAssertTrue(sent.enabled, "the tag edit does not flip the record's enabled state in iCloud")
     }
 
     func testCanonicalKeywordFormIsComparedWhenResolvingConflicts() async throws {
         let store = try openStore(at: try databaseURL())
         _ = try await store.create(makeSnippet(name: "Mine", keyword: ";caf\u{00E9}"))
+        clock.advance(by: 10)
         let incoming = makeSnippet(name: "Theirs", keyword: ";cafe\u{0301}")
         let result = try await store.applyRemote(remote(incoming), account: accountA)
         XCTAssertTrue(result.disabledForKeywordConflict)

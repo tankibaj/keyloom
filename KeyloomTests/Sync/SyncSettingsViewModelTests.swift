@@ -107,6 +107,18 @@ final class SyncSettingsViewModelTests: SyncTestCase {
         XCTAssertEqual(model.skippedNote?.contains("1 iCloud snippets"), true)
     }
 
+    func testKeywordConflictsSyncResolvedAreExplained() async throws {
+        let device = try makeDevice()
+        let older = makeSnippet(name: "Older", keyword: ";kw")
+        clock.advance(by: 10)
+        _ = try await device.store.create(makeSnippet(name: "Younger", keyword: ";kw"))
+        _ = try await device.store.applyRemote(.upsert(older, systemFields: nil), account: "icloud:A")
+        let model = makeModel(device)
+        await model.refresh()
+        XCTAssertEqual(model.keywordConflictCount, 1)
+        XCTAssertEqual(model.keywordConflictNote?.contains("turned off"), true)
+    }
+
     func testObservingFollowsControllerStatusChanges() async throws {
         let device = try makeDevice()
         let model = makeModel(device)

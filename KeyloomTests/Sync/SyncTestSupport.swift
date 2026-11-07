@@ -208,7 +208,12 @@ final class FakeEngine: SyncEngineAdapter, @unchecked Sendable {
         lock.withLock { token = fetched.token }
         await session.deliver(.stateUpdated(Data("\(fetched.token)".utf8)))
 
-        let batch = await session.nextOutgoing(limit: 100)
+        // Like the production adapter, silently leave out a snippet whose record cannot be built.
+        let batch = await session.nextOutgoing(limit: 100).filter { change in
+            guard case .save(let snippet) = change.payload else { return true }
+            let scratch = CKRecord(recordType: SnippetRecord.recordType, recordID: SnippetRecord.recordID(change.recordID))
+            return (try? SnippetRecord.fill(scratch, from: snippet)) != nil
+        }
         guard !batch.isEmpty else { return }
         if cloud.isOffline { throw SyncFailure(kind: .networkUnavailable) }
         let failing = lock.withLock { failingSends }

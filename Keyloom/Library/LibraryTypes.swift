@@ -10,6 +10,8 @@ enum LibraryChange: Equatable, Sendable {
     /// Back from the trash, by undo or restore.
     case restored(UUID)
     case usageRecorded(UUID)
+    /// iCloud sync added, changed or removed snippets; observers should reload.
+    case remoteChangesApplied
 }
 
 /// The sidebar and menu views over the library.

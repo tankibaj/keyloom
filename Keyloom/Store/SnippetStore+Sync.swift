@@ -72,6 +72,7 @@ extension SnippetStore {
                 $0.string(0)
             })
             var enqueued = 0
+            let forced = try syncForcedIDs(db)
             for row in try syncRows(db).rows {
                 let key = row.snippet.id.uuidString
                 guard !foreign.contains(key), !queued.contains(key) else { continue }
@@ -80,7 +81,7 @@ extension SnippetStore {
                 if row.deletedAt != nil {
                     differs = base?.snapshot != nil
                 } else if let agreed = base?.snapshot {
-                    differs = !row.snippet.hasSameSyncedContent(as: agreed)
+                    differs = !Self.syncNormalized(row.snippet, forced: forced).hasSameSyncedContent(as: agreed)
                 } else {
                     differs = true
                 }
@@ -107,6 +108,7 @@ extension SnippetStore {
                 intents[entry.recordID, default: []].append(entry)
             }
             var changes: [OutgoingChange] = []
+            let forced = try syncForcedIDs(db)
             for id in order where changes.count < limit {
                 let retryIDs = (intents[id] ?? []).map(\.retryID)
                 func discard() throws {
@@ -117,8 +119,9 @@ extension SnippetStore {
                 guard found.unreadable == 0 else { continue }
                 let base = try syncBase(db, account: account, id: id)
                 if let row = found.rows.first, row.deletedAt == nil {
-                    if let agreed = base?.snapshot, agreed.hasSameSyncedContent(as: row.snippet) { try discard(); continue }
-                    changes.append(OutgoingChange(recordID: id, payload: .save(row.snippet), systemFields: base?.systemFields,
+                    let snippet = Self.syncNormalized(row.snippet, forced: forced)
+                    if let agreed = base?.snapshot, agreed.hasSameSyncedContent(as: snippet) { try discard(); continue }
+                    changes.append(OutgoingChange(recordID: id, payload: .save(snippet), systemFields: base?.systemFields,
                                                   retryIDs: retryIDs))
                 } else if base?.snapshot != nil {
                     changes.append(OutgoingChange(recordID: id, payload: .delete, systemFields: base?.systemFields,
@@ -174,16 +177,35 @@ extension SnippetStore {
             let id = checked.recordID
             let found = try syncRows(db, id: id)
             guard found.unreadable == 0 else { throw StoreError.corruptRecord(column: "template") }
-            let local = found.rows.first.map { LocalState(snippet: $0.snippet, isDeleted: $0.deletedAt != nil) }
+            let forced = try syncForcedIDs(db)
+            let local = found.rows.first.map {
+                LocalState(snippet: Self.syncNormalized($0.snippet, forced: forced), isDeleted: $0.deletedAt != nil)
+            }
             let context = Reconciler.Context(now: now(), makeID: makeID) { keyword, excluding in
-                try self.syncKeywordIsTaken(db, keyword, excluding: excluding)
+                try self.syncKeywordOwner(db, keyword, excluding: excluding)
             }
             let plan = try Reconciler.plan(checked, local: local, base: try syncBase(db, account: account, id: id), context: context)
 
+            // Losers first: the unique index allows one enabled snippet per keyword.
+            for loserID in plan.disable {
+                guard var loser = try syncRows(db, id: loserID).rows.first?.snippet else { continue }
+                loser.enabled = false
+                loser.revision += 1
+                loser.updatedAt = now()
+                try syncSave(db, loser)
+                try db.run("INSERT OR IGNORE INTO sync_conflict_disabled (record_id) VALUES (?)", [.uuid(loserID)])
+            }
             switch plan.local {
             case .none: break
-            case .save(let snippet): try syncSave(db, snippet)
+            case .save(let snippet):
+                try syncSave(db, snippet)
+                if plan.storedDisabledForConflict {
+                    try db.run("INSERT OR IGNORE INTO sync_conflict_disabled (record_id) VALUES (?)", [.uuid(id)])
+                } else {
+                    try db.run("DELETE FROM sync_conflict_disabled WHERE record_id = ?", [.uuid(id)])
+                }
             case .tombstone:
+                try db.run("DELETE FROM sync_conflict_disabled WHERE record_id = ?", [.uuid(id)])
                 let moment = SQLValue.date(now())
                 try db.run("UPDATE snippets SET deleted_at = ?, updated_at = ?, revision = revision + 1 WHERE id = ?",
                            [moment, moment, .uuid(id)])
@@ -204,6 +226,18 @@ extension SnippetStore {
             }
             return RemoteApplyResult(outcome: plan.outcome, libraryChanged: plan.local != .none || plan.copy != nil,
                                      disabledForKeywordConflict: plan.disabledForKeywordConflict)
+        }
+    }
+
+    /// Snippets sync turned off because another snippet holds their keyword (and still does): for a notice.
+    func keywordConflictDisabledIDs() throws -> [UUID] {
+        try read { db in
+            try db.rows("""
+            SELECT f.record_id FROM sync_conflict_disabled f JOIN snippets s ON s.id = f.record_id
+            WHERE s.deleted_at IS NULL AND s.enabled = 0 AND s.keyword IS NOT NULL AND EXISTS (
+                SELECT 1 FROM snippets o WHERE o.keyword = s.keyword AND o.enabled = 1 AND o.deleted_at IS NULL AND o.id != s.id)
+            ORDER BY f.record_id
+            """) { UUID(uuidString: $0.string(0)) }.compactMap { $0 }
         }
     }
 
@@ -272,11 +306,26 @@ extension SnippetStore {
                    [.text(account), .uuid(id), encoded, systemFields.map(SQLValue.blob) ?? .null])
     }
 
-    /// An enabled, live snippet outside `excluding` already holds this (canonical) keyword.
-    private func syncKeywordIsTaken(_ db: SQLiteConnection, _ keyword: String, excluding: Set<UUID>) throws -> Bool {
-        let owners = try db.rows("SELECT id FROM snippets WHERE keyword = ? AND enabled = 1 AND deleted_at IS NULL",
-                                 [.text(keyword)]) { $0.string(0) }
-        return owners.contains { owner in !excluding.contains { $0.uuidString == owner } }
+    /// The enabled, live snippet outside `excluding` that holds this (canonical) keyword.
+    private func syncKeywordOwner(_ db: SQLiteConnection, _ keyword: String, excluding: Set<UUID>) throws -> Reconciler.KeywordOwner? {
+        let owners = try db.rows("SELECT id, created_at FROM snippets WHERE keyword = ? AND enabled = 1 AND deleted_at IS NULL",
+                                 [.text(keyword)]) { row in (row.string(0), row.date(1)) }
+        return owners.compactMap { text, createdAt in
+            UUID(uuidString: text).flatMap { id in excluding.contains(id) ? nil : Reconciler.KeywordOwner(id: id, createdAt: createdAt) }
+        }.first
+    }
+
+    private func syncForcedIDs(_ db: SQLiteConnection) throws -> Set<UUID> {
+        Set(try db.rows("SELECT record_id FROM sync_conflict_disabled") { UUID(uuidString: $0.string(0)) }.compactMap { $0 })
+    }
+
+    /// A snippet that sync itself turned off for a keyword conflict is compared and sent as the user left it
+    /// (enabled): the forced state is local, so it is never mistaken for an edit nor pushed over iCloud.
+    private static func syncNormalized(_ snippet: Snippet, forced: Set<UUID>) -> Snippet {
+        guard !snippet.enabled, forced.contains(snippet.id) else { return snippet }
+        var intended = snippet
+        intended.enabled = true
+        return intended
     }
 
     /// Inserts or overwrites the live row for `snippet`, with its tags and a history snapshot. Local usage

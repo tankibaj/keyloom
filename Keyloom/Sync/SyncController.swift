@@ -63,6 +63,11 @@ actor SyncController {
     private var syncingSession: SyncSession?
     private var syncRequested = false
     private var starting = false
+    /// Bumped whenever a session starts or stops, so a stop that was overtaken by a newer start knows it.
+    private var generation = 0
+    /// A remote change could not be stored (a transient store error): the engine's token must not move past it,
+    /// and the session restarts from the last saved state at the next sync so the change is fetched again.
+    private var replayNeeded = false
     private var inFlight = 0
     private var drainWaiters: [CheckedContinuation<Void, Never>] = []
     /// Changes handed to the engine and not yet answered, per record; an answer names the revision it sent.
@@ -92,6 +97,11 @@ actor SyncController {
         return stream
     }
 
+    /// Snippets sync turned off because another snippet holds their keyword, for a notice.
+    func keywordConflictCount() async -> Int {
+        (try? await store.keywordConflictDisabledIDs().count) ?? 0
+    }
+
     /// Local changes waiting to be uploaded for the current (or last) account.
     func pendingChangeCount() async -> Int {
         let account = session?.account ?? SnippetStore.localSyncAccount
@@ -114,9 +124,19 @@ actor SyncController {
         }
     }
 
-    /// Fetch remote changes and send queued ones, when sync is running.
+    /// Fetch remote changes and send queued ones. Starts sync first when the switch is on but nothing is running
+    /// (it stopped for an account problem, or a stored change must be replayed).
     func syncNow() async {
-        guard preference.isEnabled, let session else { return }
+        guard preference.isEnabled else { return }
+        guard let session else {
+            await start()
+            return
+        }
+        if replayNeeded {
+            await stopSession()
+            await start()
+            return
+        }
         await runSync(session)
     }
 
@@ -164,6 +184,8 @@ actor SyncController {
     private func begin(account: String) async {
         let session = SyncSession(account: account, controller: self)
         self.session = session
+        generation += 1
+        replayNeeded = false
         sentBatch = [:]
         status = .syncing
         let state: Data?
@@ -195,12 +217,15 @@ actor SyncController {
     private func stopSession() async {
         guard session != nil else { return }
         session = nil
+        generation += 1
+        let stopped = generation
         sentBatch = [:]
         await adapter.stop()
         await drain()
-        // Edits from now on are journaled locally and adopted when sync starts again.
+        // Edits from now on are journaled locally and adopted when sync starts again; but not if a newer session
+        // started while this one drained, which owns the journal account now.
         // `local` is a valid account name, so this cannot throw.
-        try? await store.setSyncAccount(SnippetStore.localSyncAccount)
+        if session == nil, generation == stopped { try? await store.setSyncAccount(SnippetStore.localSyncAccount) }
     }
 
     private func drain() async {
@@ -305,16 +330,35 @@ actor SyncController {
             return []
         }
         guard session === self.session else { return [] }
-        for change in changes where !(sentBatch[change.recordID] ?? []).contains(change) {
+        let sendable = await withoutOversized(changes, account: session.account)
+        for change in sendable where !(sentBatch[change.recordID] ?? []).contains(change) {
             sentBatch[change.recordID] = Array(((sentBatch[change.recordID] ?? []) + [change]).suffix(Self.maxUnansweredPerRecord))
         }
-        return changes
+        return sendable
+    }
+
+    /// A snippet CloudKit would refuse for size is never handed to the engine, which would drop it silently: it
+    /// counts as a failed attempt (kept queued) and the problem is shown.
+    private func withoutOversized(_ changes: [OutgoingChange], account: String) async -> [OutgoingChange] {
+        var sendable: [OutgoingChange] = []
+        for change in changes {
+            guard case .save(let snippet) = change.payload, !SnippetRecord.fits(snippet) else {
+                sendable.append(change)
+                continue
+            }
+            do { try await store.markFailed(retryIDs: change.retryIDs, account: account) } catch { problem = .localStorage }
+            if problem != .localStorage { problem = .recordTooLarge }
+            if syncingSession == nil { status = .failed(.recordTooLarge) }
+        }
+        return sendable
     }
 
     private func handle(_ event: SyncEngineEvent, from session: SyncSession) async -> FollowUp? {
         let account = session.account
         switch event {
         case .stateUpdated(let state):
+            // Never persist a token that is past a change which was not stored.
+            guard !replayNeeded else { break }
             do { try await store.saveSyncEngineState(state, account: account) } catch { problem = .localStorage }
         case .fetched(let changes, let unreadable):
             skippedRemoteRecords += unreadable
@@ -348,6 +392,7 @@ actor SyncController {
             skippedRemoteRecords += 1
         } catch {
             problem = .localStorage
+            replayNeeded = true
         }
         return false
     }

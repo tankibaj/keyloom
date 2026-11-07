@@ -43,12 +43,19 @@ enum SnippetRecord {
         CKRecord.ID(recordName: id.uuidString, zoneID: zoneID)
     }
 
+    /// Whether the snippet's record stays inside CloudKit's size limit.
+    static func fits(_ snippet: Snippet) -> Bool {
+        (try? snippet.template.encoded()).map { payloadBytes(of: snippet, template: $0) <= maxPayloadBytes } ?? true
+    }
+
+    private static func payloadBytes(of snippet: Snippet, template: Data) -> Int {
+        template.count + snippet.name.utf8.count + (snippet.keyword?.utf8.count ?? 0) + snippet.tags.reduce(0) { $0 + $1.utf8.count }
+    }
+
     /// Writes every synced field of `snippet` into `record`, replacing earlier values.
     static func fill(_ record: CKRecord, from snippet: Snippet) throws {
         let template = try snippet.template.encoded()
-        let size = template.count + snippet.name.utf8.count + (snippet.keyword?.utf8.count ?? 0)
-            + snippet.tags.reduce(0) { $0 + $1.utf8.count }
-        guard size <= maxPayloadBytes else { throw SnippetRecordError.tooLarge }
+        guard payloadBytes(of: snippet, template: template) <= maxPayloadBytes else { throw SnippetRecordError.tooLarge }
         let (kind, value): (String, String) = switch snippet.icon {
         case .emoji(let value): ("emoji", value)
         case .symbol(let value): ("symbol", value)

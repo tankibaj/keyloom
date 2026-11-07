@@ -69,6 +69,23 @@ final class SyncInteractionTests: SyncTestCase {
         XCTAssertEqual(queued.map(\.recordID), [local.id], "kept for when iCloud is allowed again")
     }
 
+    func testSyncNowStartsSyncAfterTheUserSignsBackInWhenNoSessionIsRunning() async throws {
+        let device = try makeDevice()
+        await device.enableSync()
+        device.engine.account = .noAccount
+        await device.sync()
+        var status = await device.controller.status
+        XCTAssertEqual(status, .signedOut)
+
+        device.engine.account = .available(account: accountA)
+        let snippet = try await device.store.create(makeSnippet(name: "While signed out", keyword: ";ws"))
+        await device.controller.syncNow()
+
+        status = await device.controller.status
+        XCTAssertEqual(status, .upToDate(lastSyncedAt: clock.now), "Sync Now works again without relaunching")
+        XCTAssertNotNil(cloud.snippets(account: accountA)[snippet.id])
+    }
+
     func testSigningOutWhileRunningStopsTheSessionButKeepsEverything() async throws {
         let device = try makeDevice()
         let snippet = try await device.store.create(makeSnippet(name: "Stays", keyword: ";stay"))

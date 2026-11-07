@@ -79,6 +79,7 @@ final class SyncSettingsViewModel {
     private(set) var status: SyncStatus = .off
     private(set) var pendingChanges = 0
     private(set) var skippedRemoteRecords = 0
+    private(set) var keywordConflictCount = 0
 
     init(controller: SyncController, preference: SyncPreference = SyncPreference()) {
         self.controller = controller
@@ -92,6 +93,12 @@ final class SyncSettingsViewModel {
     var skippedNote: String? {
         skippedRemoteRecords == 0 ? nil
             : String(localized: "\(skippedRemoteRecords) iCloud snippets could not be read by this version of Keyloom and were left untouched.")
+    }
+
+    /// Shown when sync turned snippets off because another snippet uses their keyword.
+    var keywordConflictNote: String? {
+        keywordConflictCount == 0 ? nil
+            : String(localized: "\(keywordConflictCount) snippets were turned off because another snippet uses the same keyword. Change a keyword to turn one back on.")
     }
 
     var pendingNote: String? {
@@ -128,5 +135,6 @@ final class SyncSettingsViewModel {
     private func refreshCounts() async {
         pendingChanges = await controller.pendingChangeCount()
         skippedRemoteRecords = await controller.skippedRemoteRecords
+        keywordConflictCount = await controller.keywordConflictCount()
     }
 }

@@ -24,6 +24,10 @@ struct SyncSettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let pending = model.pendingNote { Text(pending).foregroundStyle(.secondary) }
+                if let conflicts = model.keywordConflictNote {
+                    Label(conflicts, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let skipped = model.skippedNote {
                     Label(skipped, systemImage: "info.circle").foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

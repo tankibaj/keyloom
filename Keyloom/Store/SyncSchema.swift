@@ -30,3 +30,16 @@ extension Migrations {
     ) STRICT, WITHOUT ROWID;
     """
 }
+
+extension Migrations {
+    /// Marks snippets that sync turned off because another snippet holds their keyword, so that forced state is
+    /// never pushed to iCloud as if the user had chosen it.
+    /// Down note: v3 only adds one table; undo it by restoring the pre-migration backup the runner writes.
+    static let v3 = Migration(version: 3) { database in
+        try database.execute("""
+        CREATE TABLE sync_conflict_disabled (
+            record_id TEXT NOT NULL PRIMARY KEY
+        ) STRICT, WITHOUT ROWID;
+        """)
+    }
+}
