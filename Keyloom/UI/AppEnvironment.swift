@@ -57,14 +57,21 @@ final class AppEnvironment {
                                        dependencies: mode == .live ? .system() : .uiTest())
         picker.attach(host)
         host.start()
+        // `library.syncStore` is the one store; sync changes reach the UI through `reloadAfterSync`.
+        let syncPreference = SyncPreference(defaults: defaults)
+        let sync = SyncController(store: library.syncStore, adapter: mode == .live ? CKSyncEngineAdapter() : InertSyncAdapter(),
+                                  preference: syncPreference, onLibraryChanged: { await library.reloadAfterSync() })
+        await sync.launch()
+        let assistancePolicy = WritingAssistancePolicy(defaults: defaults)
         let settings = SettingsModels(
             appearance: AppearanceSettings(defaults: defaults), shortcut: ShortcutSettingsModel(host: host),
             expansion: ExpansionSettingsModel(host: host),
             backups: SyncBackupsModel(library: library, snapshots: model.snapshots),
-            // TODO(keyloom-wp5-integrate): bind the CKSyncEngine-backed provider here when Keyloom/Sync merges.
-            sync: LocalOnlySyncSettings(defaults: defaults),
-            assistance: WritingAssistanceSettingsModel(policy: WritingAssistancePolicy(defaults: defaults)))
+            sync: SyncSettingsViewModel(controller: sync, preference: syncPreference),
+            assistance: WritingAssistanceSettingsModel(policy: assistancePolicy))
         settings.appearance.applyCurrent()
+        model.bindWritingTools(to: assistancePolicy)
+        model.observeDayChanges()
         services = Services(host: host, picker: picker, menuBar: MenuBarModel(library: library, host: host, picker: picker),
                             settings: settings)
     }

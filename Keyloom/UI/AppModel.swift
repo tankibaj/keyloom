@@ -41,6 +41,10 @@ final class AppModel {
     private(set) var snapshotError: String?
     @ObservationIgnored private let openLibrary: @MainActor (URL) async throws -> SnippetLibrary
     @ObservationIgnored private var opening: Task<Void, Never>?
+    @ObservationIgnored private var writingToolsPolicy: WritingAssistancePolicy?
+    @ObservationIgnored private var dayChangeObservers: [any NSObjectProtocol] = []
+    /// The newest snapshot started by a day change, for tests to await.
+    @ObservationIgnored private(set) var pendingSnapshot: Task<Void, Never>?
 
     /// `openLibrary` replaces the real database opener (tests).
     init(dataDirectory: URL = DataLocation.resolve(), snapshots: SnapshotManager? = nil,
@@ -90,14 +94,39 @@ final class AppModel {
 
     /// At most one per day and only when the library changed (`SnapshotManager`). A failure is kept for Settings
     /// and never blocks the library.
-    /// TODO(keyloom-wp4-snapshots): taken at launch and on "Back Up Now" only; a Mac that stays up for days misses
-    /// the day rollover, so schedule it (NSBackgroundActivityScheduler) when long-running sessions are profiled.
     private func takeDailySnapshot(of library: SnippetLibrary) async {
         do {
             _ = try await library.takeDailySnapshot(using: snapshots)
             snapshotError = nil
         } catch {
             snapshotError = UserMessage.describe(error)
+        }
+    }
+
+    /// The editor body is the one prose field. Writing Tools follow the assistance policy, now and on every
+    /// change (a managed profile can switch them off while an editor is open).
+    func bindWritingTools(to policy: WritingAssistancePolicy) {
+        writingToolsPolicy = policy
+        policy.observeChanges { [weak self] _ in self?.applyWritingTools() }
+        applyWritingTools()
+    }
+
+    private func applyWritingTools() {
+        guard let policy = writingToolsPolicy else { return }
+        editor?.bodyController.writingToolsBehavior = policy.snapshot.writingToolsBehavior(forProseField: true)
+    }
+
+    /// Takes a daily snapshot again when the day rolls over or the clock or time zone jumps, so a Mac that stays
+    /// up for days still backs up. At most one per day (`SnapshotManager`); a failure is shown in Settings only.
+    func observeDayChanges(center: NotificationCenter = .default) {
+        for name in [Notification.Name.NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let library = self.library else { return }
+                    self.pendingSnapshot = Task { await self.takeDailySnapshot(of: library) }
+                }
+            }
+            dayChangeObservers.append(token)
         }
     }
 
@@ -158,6 +187,7 @@ final class AppModel {
             libraryModel?.selection = id
             if let id, let library, let snippet = await library.snippet(id: id) {
                 editor = EditorViewModel(library: library, snippet: snippet)
+                applyWritingTools()
             } else {
                 editor = nil
             }
@@ -165,6 +195,7 @@ final class AppModel {
             guard let library else { return }
             libraryModel?.selection = nil
             editor = EditorViewModel(library: library, snippet: nil)
+            applyWritingTools()
         case .cancelEdit:
             if editor?.target == .new { editor = nil } else { editor?.revert() }
         case .closeWindow:
