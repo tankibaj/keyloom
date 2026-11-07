@@ -16,8 +16,21 @@ final class RichTextController: NSObject, NSTextViewDelegate {
 
     @ObservationIgnored private var pendingDocument: Document?
 
+    /// What the system's Writing Tools may do in the body. Off until the policy says otherwise.
+    var writingToolsBehavior: EditorWritingToolsBehavior = .none {
+        didSet { textView?.writingToolsBehavior = Self.nsBehavior(writingToolsBehavior) }
+    }
+
+    static func nsBehavior(_ behavior: EditorWritingToolsBehavior) -> NSWritingToolsBehavior {
+        switch behavior {
+        case .none: NSWritingToolsBehavior.none
+        case .default: NSWritingToolsBehavior.default
+        }
+    }
+
     func attach(_ textView: NSTextView) {
         self.textView = textView
+        textView.writingToolsBehavior = Self.nsBehavior(writingToolsBehavior)
         textView.delegate = self
         if let pendingDocument { load(pendingDocument) }
     }

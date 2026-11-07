@@ -30,21 +30,40 @@ final class AppEnvironmentTests: LibraryUITestCase {
         XCTAssertEqual(first.host.status.shortcut, .registered(.defaultShortcut))
     }
 
-    func testSettingsShareTheEnvironmentDefaultsAndTheSyncSeamStartsLocalOnly() async throws {
+    func testSettingsShareTheEnvironmentDefaultsAndSyncIsTheRealControllerOffByDefault() async throws {
         let defaults = try isolatedDefaults()
         let environment = AppEnvironment(model: AppModel(dataDirectory: try makeDirectory()), mode: .uiTest, defaults: defaults)
         await environment.start()
         let settings = try XCTUnwrap(environment.services?.settings)
+        await settings.sync.refresh()
         XCTAssertEqual(settings.sync.status, .off)
+        XCTAssertFalse(settings.sync.isEnabled)
         settings.assistance.assistanceEnabled = true
         XCTAssertTrue(defaults.bool(forKey: WritingAssistancePolicy.assistanceKey))
-        settings.sync.setEnabled(true)
-        XCTAssertTrue(defaults.bool(forKey: LocalOnlySyncSettings.key))
-        XCTAssertTrue(Set([LocalOnlySyncSettings.key]).isDisjoint(with: WritingAssistancePolicy.localOnlyKeys),
+        await settings.sync.setEnabled(true)
+        XCTAssertTrue(defaults.bool(forKey: SyncPreference.key))
+        XCTAssertTrue(Set([SyncPreference.key]).isDisjoint(with: WritingAssistancePolicy.localOnlyKeys),
                       "Per-device assistance keys are never part of the sync switch's state")
         settings.appearance.preference = .dark
         XCTAssertEqual(defaults.string(forKey: AppearanceSettings.key), "dark")
         settings.appearance.preference = .system
+    }
+
+    func testTurningSyncOnWithoutICloudShowsUnavailableAndLocalUseContinues() async throws {
+        let environment = AppEnvironment(model: AppModel(dataDirectory: try makeDirectory()), mode: .uiTest, defaults: try isolatedDefaults())
+        await environment.start()
+        let services = try XCTUnwrap(environment.services)
+        await services.settings.sync.setEnabled(true)
+        XCTAssertEqual(services.settings.sync.status, .unavailable(.buildNotProvisioned))
+        let library = try XCTUnwrap(environment.model.library)
+        _ = try await library.create(name: "Still works", icon: .emoji("x"), keyword: nil, template: try document("Body"))
+        let count = await library.allSnippets().count
+        XCTAssertEqual(count, 1)
+    }
+
+    func testTheRealCloudKitAdapterNeverTouchesCloudKitInABuildWithoutTheEntitlement() async {
+        let status = await CKSyncEngineAdapter().accountStatus()
+        XCTAssertEqual(status, .buildNotProvisioned)
     }
 
     func testTheAppStaysResidentAfterTheLastWindowCloses() {

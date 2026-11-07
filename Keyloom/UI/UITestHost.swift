@@ -76,3 +76,11 @@ extension HostDependencies {
             settle: { _ in }, ownBundleID: Bundle.main.bundleIdentifier, permissionPollInterval: nil)
     }
 }
+
+/// No CloudKit at all: this adapter says the build is not provisioned, so the sync switch reads "not available".
+struct InertSyncAdapter: SyncEngineAdapter {
+    func accountStatus() async -> CloudAccountStatus { .buildNotProvisioned }
+    func start(session: SyncSession, state: Data?) async throws {}
+    func stop() async {}
+    func syncNow() async throws {}
+}

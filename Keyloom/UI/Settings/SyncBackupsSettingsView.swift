@@ -14,7 +14,7 @@ struct JSONFileDocument: FileDocument {
 
 /// Settings > Sync & Backups: the iCloud switch, import and export, and snapshots with restore.
 struct SyncBackupsSettingsView: View {
-    let sync: any SyncSettingsProviding
+    let sync: SyncSettingsViewModel
     @Bindable var backups: SyncBackupsModel
     let snapshotError: String?
 
@@ -70,14 +70,7 @@ struct SyncBackupsSettingsView: View {
     }
 
     private var iCloudSection: some View {
-        Section("iCloud Sync") {
-            Toggle("iCloud Sync", isOn: Binding(get: { sync.isEnabled }, set: { sync.setEnabled($0) }))
-                .accessibilityIdentifier("settings.sync.toggle")
-            Label(SyncCopy.description(for: sync.status), systemImage: SyncCopy.symbol(for: sync.status))
-                .accessibilityIdentifier("settings.sync.status")
-            Text("This choice applies to this Mac only. Writing-assistance settings are never synced.")
-                .font(.callout).foregroundStyle(.secondary)
-        }
+        SyncSettingsView(model: sync)
     }
 
     private var portabilitySection: some View {

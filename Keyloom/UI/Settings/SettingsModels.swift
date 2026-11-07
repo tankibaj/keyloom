@@ -7,6 +7,6 @@ struct SettingsModels {
     let shortcut: ShortcutSettingsModel
     let expansion: ExpansionSettingsModel
     let backups: SyncBackupsModel
-    let sync: any SyncSettingsProviding
+    let sync: SyncSettingsViewModel
     let assistance: WritingAssistanceSettingsModel
 }

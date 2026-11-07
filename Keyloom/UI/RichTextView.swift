@@ -14,7 +14,8 @@ struct RichTextView: NSViewRepresentable {
 
     func updateNSView(_ view: NSScrollView, context: Context) {}
 
-    /// Writing Tools are off by default here: a rewrite would replace chips and list markers with plain text.
+    /// Writing Tools stay off (`.none`) until `controller.writingToolsBehavior` says otherwise, which only the
+    /// assistance policy does.
     static func makeScrollView(controller: RichTextController) -> NSScrollView {
         let textView = BodyTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
         textView.isRichText = true
