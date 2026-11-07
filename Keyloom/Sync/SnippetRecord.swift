@@ -75,7 +75,8 @@ enum SnippetRecord {
     }
 
     /// The snippet a record describes. Structure only: content rules are enforced when the store applies it.
-    static func snippet(from record: CKRecord) throws -> Snippet {
+    /// `supportedSchema` is the newest record schema this build reads (a seam for tests; production uses the default).
+    static func snippet(from record: CKRecord, supportedSchema: Int = currentSchema) throws -> Snippet {
         guard record.recordType == recordType else { throw SnippetRecordError.wrongRecordType }
         guard let id = UUID(uuidString: record.recordID.recordName) else { throw SnippetRecordError.recordNameIsNotAnID }
         func required<T>(_ field: String, as type: T.Type) throws -> T {
@@ -83,7 +84,7 @@ enum SnippetRecord {
             return value
         }
         let schema = try required(Field.schema, as: Int.self)
-        guard schema <= currentSchema else { throw SnippetRecordError.unsupportedSchema(found: schema) }
+        guard schema <= supportedSchema else { throw SnippetRecordError.unsupportedSchema(found: schema) }
         let templateData = try required(Field.template, as: Data.self)
         let template: Document
         do { template = try Document.decode(from: templateData) } catch { throw SnippetRecordError.invalidTemplate }

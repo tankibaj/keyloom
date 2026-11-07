@@ -175,18 +175,22 @@ final class CKSyncEngineAdapter: SyncEngineAdapter, CKSyncEngineDelegate, @unche
     private static func fetched(_ changes: CKSyncEngine.Event.FetchedRecordZoneChanges) -> SyncEngineEvent {
         var remote: [RemoteChange] = []
         var unreadable = 0
+        var newerSchema: [UUID: Int] = [:]
         for modification in changes.modifications {
             do {
                 remote.append(.upsert(try SnippetRecord.snippet(from: modification.record),
                                       systemFields: SnippetRecord.archivedSystemFields(of: modification.record)))
             } catch {
                 unreadable += 1
+                if case SnippetRecordError.unsupportedSchema(let found) = error, let id = UUID(uuidString: modification.record.recordID.recordName) {
+                    newerSchema[id] = found
+                }
             }
         }
         for deletion in changes.deletions {
             if let id = UUID(uuidString: deletion.recordID.recordName) { remote.append(.delete(id)) }
         }
-        return .fetched(remote, unreadable: unreadable)
+        return .fetched(remote, unreadable: unreadable, newerSchema: newerSchema)
     }
 
     private static func results(of sent: CKSyncEngine.Event.SentRecordZoneChanges) -> [SendResult] {

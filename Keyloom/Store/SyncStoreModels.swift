@@ -74,3 +74,10 @@ struct OutgoingBatch: Sendable, Equatable {
     /// Settling conflict markers turned a snippet back on: the library must reload.
     let libraryChanged: Bool
 }
+
+/// Remote records an engine fetch skipped because a newer Keyloom wrote them: the highest schema version seen and
+/// which records. Their local pushes are held back, so an older build never overwrites or deletes them.
+struct NewerSchemaMarker: Sendable, Equatable, Codable {
+    var version: Int
+    var recordIDs: Set<UUID>
+}

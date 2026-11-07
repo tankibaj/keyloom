@@ -31,12 +31,61 @@ extension SnippetStore {
         }
     }
 
+    /// Remote records written by a newer Keyloom than this build, per account. Kept in `sync_engine_state` under
+    /// a key no account name can take (real accounts are `icloud:...` or `local`), so it needs no schema change.
+    private static func newerSchemaKey(_ account: String) -> String { "newer-schema|" + account }
+
+    func newerSchemaMarker(account: String) throws -> NewerSchemaMarker? {
+        try Self.validateAccount(account)
+        return try read { db in try newerSchemaMarker(db, account: account) }
+    }
+
+    private func newerSchemaMarker(_ db: SQLiteConnection, account: String) throws -> NewerSchemaMarker? {
+        let data = try db.first("SELECT state FROM sync_engine_state WHERE account = ?", [.text(Self.newerSchemaKey(account))]) {
+            $0.data(0)
+        }
+        // An unreadable marker is dropped, not trusted: the worst case is one extra full fetch.
+        return data.flatMap { try? JSONDecoder().decode(NewerSchemaMarker.self, from: $0) }
+    }
+
+    /// Records the newer-schema records an engine fetch skipped (`seen`: record ID to schema version) and forgets
+    /// those a later fetch delivered or deleted (`resolved`). The marker keeps the highest version seen and goes
+    /// away when no record is left. Returns the marker as stored.
+    @discardableResult
+    func updateNewerSchemaMarker(seen: [UUID: Int], resolved: Set<UUID>, account: String) throws -> NewerSchemaMarker? {
+        try Self.validateAccount(account)
+        return try write { db in
+            var marker = try newerSchemaMarker(db, account: account) ?? NewerSchemaMarker(version: 0, recordIDs: [])
+            marker.recordIDs.subtract(resolved)
+            marker.recordIDs.formUnion(seen.keys)
+            marker.version = max(seen.values.max() ?? 0, marker.version)
+            let key = Self.newerSchemaKey(account)
+            guard !marker.recordIDs.isEmpty else {
+                try db.run("DELETE FROM sync_engine_state WHERE account = ?", [.text(key)])
+                return nil
+            }
+            try db.run("INSERT OR REPLACE INTO sync_engine_state (account, state) VALUES (?, ?)",
+                       [.text(key), .blob(try JSONEncoder().encode(marker))])
+            return marker
+        }
+    }
+
+    /// The build can now read what it skipped: drops the account's marker and engine state together, so the next
+    /// start fetches the whole zone again (every apply is idempotent). One transaction: a crash leaves either the
+    /// marker with the old token or neither, never a cleared marker with a token that is past the skipped records.
+    func restartFetchAfterUpgrade(account: String) throws {
+        try Self.validateAccount(account)
+        _ = try write { db in
+            try db.run("DELETE FROM sync_engine_state WHERE account IN (?, ?)", [.text(account), .text(Self.newerSchemaKey(account))])
+        }
+    }
+
     /// Forgets one account's engine state and ancestors (its iCloud data was reset). The library and the
     /// queue stay, so the next start uploads whatever the account no longer has.
     func resetSyncMetadata(account: String) throws {
         try Self.validateAccount(account)
         try write { db in
-            try db.run("DELETE FROM sync_engine_state WHERE account = ?", [.text(account)])
+            try db.run("DELETE FROM sync_engine_state WHERE account IN (?, ?)", [.text(account), .text(Self.newerSchemaKey(account))])
             try db.run("DELETE FROM sync_records WHERE account = ?", [.text(account)])
         }
     }
@@ -103,8 +152,8 @@ extension SnippetStore {
     }
 
     /// `nextOutgoing`, also saying whether settling conflict markers turned a snippet back on, so the caller can
-    /// reload the library.
-    func nextOutgoingBatch(account: String, limit: Int) throws -> OutgoingBatch {
+    /// reload the library. Records in `held` (skipped remote records a newer Keyloom wrote) stay queued untouched.
+    func nextOutgoingBatch(account: String, limit: Int, excluding held: Set<UUID> = []) throws -> OutgoingBatch {
         try Self.validateAccount(account)
         return try write { db in
             let foreign = Set(try db.rows(Self.ownedByOtherAccounts, [.text(account)]) { $0.string(0) })
@@ -117,7 +166,7 @@ extension SnippetStore {
             var changes: [OutgoingChange] = []
             let settled = try syncSettleMarkers(db)
             let forced = settled.forced
-            for id in order where changes.count < limit {
+            for id in order where changes.count < limit && !held.contains(id) {
                 let retryIDs = (intents[id] ?? []).map(\.retryID)
                 func discard() throws {
                     try db.run("DELETE FROM sync_outbox WHERE account = ? AND record_id = ?", [.text(account), .uuid(id)])

@@ -55,8 +55,10 @@ struct SendResult: Sendable, Equatable {
 enum SyncEngineEvent: Sendable, Equatable {
     /// The engine's serialized state changed: persist it for this account.
     case stateUpdated(Data)
-    /// Changes from the cloud, and how many records could not be decoded by this build.
-    case fetched([RemoteChange], unreadable: Int)
+    /// Changes from the cloud, how many records could not be decoded by this build, and which of those were
+    /// written by a newer Keyloom (record ID to the schema version it carries): they must be fetched again once
+    /// this build can read that version.
+    case fetched([RemoteChange], unreadable: Int, newerSchema: [UUID: Int] = [:])
     case sent([SendResult])
     /// The account's cloud data was erased from outside (for example by the user in iCloud settings).
     case remoteDataReset

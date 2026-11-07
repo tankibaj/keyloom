@@ -43,6 +43,9 @@ final class FakeCloud: @unchecked Sendable {
         }
     }
 
+    /// The stored record as is, readable by this build or not.
+    func record(account: String, id: UUID) -> CKRecord? { lock.withLock { servers[account]?.records[id] } }
+
     func recordCount(account: String) -> Int { lock.withLock { servers[account]?.records.count ?? 0 } }
 
     /// What another device would do: remove a record on the server.
@@ -72,7 +75,8 @@ final class FakeCloud: @unchecked Sendable {
 
     func recordID(_ id: UUID) -> CKRecord.ID { SnippetRecord.recordID(id, zoneID: zone) }
 
-    func fetch(account: String, since token: Int) throws -> (changes: [RemoteChange], unreadable: Int, token: Int) {
+    func fetch(account: String, since token: Int, supportedSchema: Int = SnippetRecord.currentSchema)
+        throws -> (changes: [RemoteChange], unreadable: Int, newerSchema: [UUID: Int], token: Int) {
         try lock.withLock {
             if offline { throw SyncFailure(kind: .networkUnavailable) }
             let server = servers[account] ?? Server()
@@ -83,18 +87,21 @@ final class FakeCloud: @unchecked Sendable {
             }
             var changes: [RemoteChange] = []
             var unreadable = 0
+            var newerSchema: [UUID: Int] = [:]
             for id in latest {
                 guard let record = server.records[id] else {
                     changes.append(.delete(id))
                     continue
                 }
                 do {
-                    changes.append(.upsert(try SnippetRecord.snippet(from: record), systemFields: Self.tagData(server.tags[id] ?? 0)))
+                    changes.append(.upsert(try SnippetRecord.snippet(from: record, supportedSchema: supportedSchema),
+                                           systemFields: Self.tagData(server.tags[id] ?? 0)))
                 } catch {
                     unreadable += 1
+                    if case SnippetRecordError.unsupportedSchema(let found) = error { newerSchema[id] = found }
                 }
             }
-            return (changes, unreadable, server.seq)
+            return (changes, unreadable, newerSchema, server.seq)
         }
     }
 
@@ -146,6 +153,13 @@ final class FakeEngine: SyncEngineAdapter, @unchecked Sendable {
     private var states: [Data?] = []
     private var crashNext = false
     private var failingSends: SyncFailureKind?
+    private var schema = SnippetRecord.currentSchema
+
+    /// The newest record schema this fake Mac's app reads; raise it to play an app update.
+    var supportedSchema: Int {
+        get { lock.withLock { schema } }
+        set { lock.withLock { schema = newValue } }
+    }
 
     init(cloud: FakeCloud, account: CloudAccountStatus) {
         self.cloud = cloud
@@ -194,17 +208,17 @@ final class FakeEngine: SyncEngineAdapter, @unchecked Sendable {
     }
 
     func syncNow() async throws {
-        let (session, account, since) = lock.withLock { () -> (SyncSession?, CloudAccountStatus, Int) in
+        let (session, account, since, supported) = lock.withLock { () -> (SyncSession?, CloudAccountStatus, Int, Int) in
             counters.syncs += 1
-            return (current, currentAccount, token)
+            return (current, currentAccount, token, schema)
         }
         guard let session else { throw SyncFailure(kind: .other(code: -2)) }
         guard case .available(let id) = account, id == session.account else {
             await session.deliver(.accountChanged(account))
             return
         }
-        let fetched = try cloud.fetch(account: id, since: since)
-        await session.deliver(.fetched(fetched.changes, unreadable: fetched.unreadable))
+        let fetched = try cloud.fetch(account: id, since: since, supportedSchema: supported)
+        await session.deliver(.fetched(fetched.changes, unreadable: fetched.unreadable, newerSchema: fetched.newerSchema))
         lock.withLock { token = fetched.token }
         await session.deliver(.stateUpdated(Data("\(fetched.token)".utf8)))
 
@@ -269,6 +283,10 @@ final class SyncDevice: @unchecked Sendable {
     let ids: SequentialIDs
     let defaults: UserDefaults
     let libraryReloads = Counter()
+    /// The newest record schema the app on this Mac reads; applies to the controller made by the next `relaunch()`.
+    var supportedSchema: Int = SnippetRecord.currentSchema {
+        didSet { engine.supportedSchema = supportedSchema }
+    }
     private(set) var store: SnippetStore
     private(set) var controller: SyncController
 
@@ -286,19 +304,21 @@ final class SyncDevice: @unchecked Sendable {
         engine = FakeEngine(cloud: cloud, account: account)
         defaults = UserDefaults(suiteName: suite)!
         store = try Self.open(directory, clock: clock, ids: ids)
-        controller = SyncDevice.makeController(store: store, engine: engine, defaults: defaults, clock: clock, reloads: libraryReloads)
+        controller = SyncDevice.makeController(store: store, engine: engine, defaults: defaults, clock: clock, reloads: libraryReloads,
+                                               supportedSchema: supportedSchema)
     }
 
     private static func makeController(store: SnippetStore, engine: FakeEngine, defaults: UserDefaults, clock: TestClock,
-                                       reloads: Counter, onChange: (@Sendable () async -> Void)? = nil) -> SyncController {
+                                       reloads: Counter, supportedSchema: Int, onChange: (@Sendable () async -> Void)? = nil) -> SyncController {
         SyncController(store: store, adapter: engine, preference: SyncPreference(defaults: defaults),
-                       onLibraryChanged: { reloads.increment(); await onChange?() }, now: { clock.now })
+                       onLibraryChanged: { reloads.increment(); await onChange?() }, now: { clock.now },
+                       supportedSchema: supportedSchema)
     }
 
     /// Replaces the controller with one whose library-changed callback runs `onChange` (to hold it in flight).
     func useController(onLibraryChanged onChange: @escaping @Sendable () async -> Void) {
         controller = Self.makeController(store: store, engine: engine, defaults: defaults, clock: clock,
-                                         reloads: libraryReloads, onChange: onChange)
+                                         reloads: libraryReloads, supportedSchema: supportedSchema, onChange: onChange)
     }
 
     func enableSync() async { await controller.setEnabled(true) }
@@ -309,7 +329,8 @@ final class SyncDevice: @unchecked Sendable {
         if !crash { await controller.shutdown() }
         await store.close()
         store = try Self.open(directory, clock: clock, ids: ids)
-        controller = Self.makeController(store: store, engine: engine, defaults: defaults, clock: clock, reloads: libraryReloads)
+        controller = Self.makeController(store: store, engine: engine, defaults: defaults, clock: clock, reloads: libraryReloads,
+                                         supportedSchema: supportedSchema)
         await controller.launch()
     }
 }

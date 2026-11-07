@@ -48,6 +48,8 @@ actor SyncController {
     private let preference: SyncPreference
     private let onLibraryChanged: @Sendable () async -> Void
     private let now: @Sendable () -> Date
+    /// The newest record schema this build reads; a seam so tests can play an app upgrade.
+    private let supportedSchema: Int
 
     private(set) var status: SyncStatus = .off {
         didSet { if status != oldValue { subscribers.values.forEach { $0.yield(status) } } }
@@ -56,6 +58,9 @@ actor SyncController {
     private(set) var ignoredCallbackCount = 0
     /// Remote records this build could not read or that failed validation; left untouched in iCloud.
     private(set) var skippedRemoteRecords = 0
+    /// Records a newer Keyloom wrote and this build skipped, for the session's account; pushes for them are held back.
+    private var newerMarker: NewerSchemaMarker?
+    var newerSchemaRecordCount: Int { newerMarker?.recordIDs.count ?? 0 }
     /// True while `setEnabled(false)` or an account change is waiting for running callbacks to finish.
     private(set) var isDraining = false
 
@@ -77,12 +82,14 @@ actor SyncController {
     private var subscribers: [UUID: AsyncStream<SyncStatus>.Continuation] = [:]
 
     init(store: SnippetStore, adapter: any SyncEngineAdapter, preference: SyncPreference = SyncPreference(),
-         onLibraryChanged: @escaping @Sendable () async -> Void = {}, now: @escaping @Sendable () -> Date = { Date() }) {
+         onLibraryChanged: @escaping @Sendable () async -> Void = {}, now: @escaping @Sendable () -> Date = { Date() },
+         supportedSchema: Int = SnippetRecord.currentSchema) {
         self.store = store
         self.adapter = adapter
         self.preference = preference
         self.onLibraryChanged = onLibraryChanged
         self.now = now
+        self.supportedSchema = supportedSchema
     }
 
     // MARK: Public
@@ -190,12 +197,20 @@ actor SyncController {
         replayNeeded = false
         sentBatch = [:]
         status = .syncing
-        let state: Data?
+        var state: Data?
         var reenabledAtStart = false
         do {
             try await store.setSyncAccount(account)
             reenabledAtStart = try await store.prepareSync(account: account).reenabled
             state = try await store.syncEngineState(account: account)
+            newerMarker = try await store.newerSchemaMarker(account: account)
+            // This build can now read what an older one skipped: forget the token so the whole zone is fetched
+            // again. Applying is idempotent, so records already stored change nothing.
+            if let skipped = newerMarker, skipped.version <= supportedSchema {
+                try await store.restartFetchAfterUpgrade(account: account)
+                newerMarker = nil
+                state = nil
+            }
         } catch {
             await abandon(session, because: .localStorage)
             return
@@ -225,6 +240,7 @@ actor SyncController {
         generation += 1
         let stopped = generation
         sentBatch = [:]
+        newerMarker = nil
         await adapter.stop()
         await drain()
         // Edits from now on are journaled locally and adopted when sync starts again; but not if a newer session
@@ -329,7 +345,8 @@ actor SyncController {
         defer { leaveCallback() }
         let changes: [OutgoingChange]
         do {
-            let batch = try await store.nextOutgoingBatch(account: session.account, limit: limit)
+            let batch = try await store.nextOutgoingBatch(account: session.account, limit: limit,
+                                                          excluding: newerMarker?.recordIDs ?? [])
             changes = batch.changes
             if batch.libraryChanged { await onLibraryChanged() }
         } catch {
@@ -367,8 +384,9 @@ actor SyncController {
             // Never persist a token that is past a change which was not stored.
             guard !replayNeeded else { break }
             do { try await store.saveSyncEngineState(state, account: account) } catch { problem = .localStorage }
-        case .fetched(let changes, let unreadable):
+        case .fetched(let changes, let unreadable, let newerSchema):
             skippedRemoteRecords += unreadable
+            await rememberNewerSchema(newerSchema, resolvedBy: changes, account: account)
             var libraryChanged = false
             for change in changes where self.session === session {
                 libraryChanged = await apply(change, account: account) || libraryChanged
@@ -379,6 +397,7 @@ actor SyncController {
         case .remoteDataReset:
             do {
                 try await store.resetSyncMetadata(account: account)
+                newerMarker = nil
                 if try await store.prepareSync(account: account).reenabled { await onLibraryChanged() }
             } catch { problem = .localStorage }
             return .syncAgain
@@ -386,6 +405,21 @@ actor SyncController {
             return .accountChanged(cloud)
         }
         return nil
+    }
+
+    /// Keeps the account's marker in step with a fetch: records a newer Keyloom wrote are remembered (so a later
+    /// start that can read them fetches again, and their local pushes are held back), and ones the cloud later
+    /// delivered or deleted are forgotten. A marker that could not be saved must not be outrun by the engine's
+    /// token, so the session replays from the last saved state.
+    private func rememberNewerSchema(_ seen: [UUID: Int], resolvedBy changes: [RemoteChange], account: String) async {
+        let resolved = Set(changes.map(\.recordID)).intersection(newerMarker?.recordIDs ?? [])
+        guard !seen.isEmpty || !resolved.isEmpty else { return }
+        do {
+            newerMarker = try await store.updateNewerSchemaMarker(seen: seen, resolved: resolved, account: account)
+        } catch {
+            problem = .localStorage
+            replayNeeded = true
+        }
     }
 
     /// Applies one remote change; true when the library changed. A record that fails validation or hits a

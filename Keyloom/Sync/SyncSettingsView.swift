@@ -28,6 +28,10 @@ struct SyncSettingsView: View {
                     Label(conflicts, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if let newer = model.newerSchemaNote {
+                    Label(newer, systemImage: "arrow.down.app").foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let skipped = model.skippedNote {
                     Label(skipped, systemImage: "info.circle").foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
