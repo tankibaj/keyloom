@@ -60,9 +60,14 @@ final class EditorViewModel {
     let library: SnippetLibrary
     let bodyController = RichTextController()
     private(set) var target: Target
-    var draft: SnippetDraft
+    var draft: SnippetDraft {
+        didSet { if draft.body != oldValue.body { bodyRevision += 1 } }
+    }
     private(set) var baseline: SnippetDraft
     var errorMessage: String?
+    private(set) var bodyRevision = 0
+    /// The on-device assistance action for this editor; nil until the app wires the service in.
+    var assistance: AssistanceEditorModel?
     private(set) var keywordFeedback = KeywordFeedback()
     /// Try Expansion: values the user typed for arguments; the rest fall back to default, first choice, then a stand-in.
     var sampleArguments: [String: String] = [:]
@@ -172,23 +177,40 @@ final class EditorViewModel {
                                                  tags: draft.tags, template: draft.body)
             case .existing(let id):
                 guard var current = await library.snippet(id: id) else { throw StoreError.notFound(id: id) }
-                current.name = draft.name
-                current.icon = draft.icon
-                current.keyword = draft.normalizedKeyword
-                current.enabled = draft.enabled
-                current.tags = draft.tags
-                current.template = draft.body
+                // Only what the user changed since the editor loaded: a field edited elsewhere meanwhile (sync)
+                // keeps its stored value unless the user also edited it, in which case the user's edit wins.
+                if draft.name != baseline.name { current.name = draft.name }
+                if draft.icon != baseline.icon { current.icon = draft.icon }
+                if draft.keyword != baseline.keyword { current.keyword = draft.normalizedKeyword }
+                if draft.enabled != baseline.enabled { current.enabled = draft.enabled }
+                if draft.tagsText != baseline.tagsText { current.tags = draft.tags }
+                if draft.body != baseline.body { current.template = draft.body }
                 saved = try await library.update(current)
             }
             target = .existing(saved.id)
-            baseline = SnippetDraft(saved)
-            draft = baseline
+            let merged = SnippetDraft(saved)
+            let bodyChanged = merged.body != draft.body
+            baseline = merged
+            draft = merged
+            if bodyChanged { bodyController.load(merged.body) }
             return true
         } catch {
             errorMessage = UserMessage.describe(error)
             if case StoreError.keywordConflict = error { await refreshKeywordFeedback() }
             return false
         }
+    }
+
+    /// The stored snippet changed (sync, another window, an import). A clean editor shows the new version; a dirty
+    /// one keeps the user's draft and its baseline, so `save` can tell what the user actually edited.
+    func refreshFromLibrary() async {
+        guard case .existing(let id) = target, let stored = await library.snippet(id: id) else { return }
+        let latest = SnippetDraft(stored)
+        guard latest != baseline, draft == baseline else { return }
+        baseline = latest
+        draft = latest
+        bodyController.load(latest.body)
+        await refreshKeywordFeedback()
     }
 
     /// Drops unsaved edits, including those in the text view.

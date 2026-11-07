@@ -66,6 +66,19 @@ final class AppEnvironmentTests: LibraryUITestCase {
         XCTAssertEqual(status, .buildNotProvisioned)
     }
 
+    func testUITestModeWiresTheFakeModelSoTheEditorOffersTheActionOnceAssistanceIsOn() async throws {
+        let environment = AppEnvironment(model: AppModel(dataDirectory: try makeDirectory()), mode: .uiTest, defaults: try isolatedDefaults())
+        await environment.start()
+        let settings = try XCTUnwrap(environment.services?.settings)
+        await environment.model.requestNewSnippet()
+        let editor = try XCTUnwrap(environment.model.editor)
+        XCTAssertEqual(editor.assistance?.isOffered, false, "Off by default: no action")
+        settings.assistance.assistanceEnabled = true
+        XCTAssertEqual(editor.assistance?.isOffered, true)
+        settings.assistance.assistanceEnabled = false
+        XCTAssertEqual(editor.assistance?.isOffered, false)
+    }
+
     func testTheAppStaysResidentAfterTheLastWindowCloses() {
         XCTAssertFalse(AppDelegate().applicationShouldTerminateAfterLastWindowClosed(NSApp))
     }

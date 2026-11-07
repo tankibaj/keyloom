@@ -5,13 +5,21 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
+    var shutdown: (@MainActor () async -> Void)?
+    var replyToTermination: @MainActor (Bool) -> Void = { NSApp.reply(toApplicationShouldTerminate: $0) }
 
     /// Keyloom is a resident utility: expansion and the menu bar keep working with the library window closed.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let model else { return .terminateNow }
-        return model.shouldTerminate() ? .terminateNow : .terminateCancel
+        if let model, !model.shouldTerminate() { return .terminateCancel }
+        guard let shutdown else { return .terminateNow }
+        // The sync engine stops first; AppKit waits for the reply.
+        Task {
+            await shutdown()
+            replyToTermination(true)
+        }
+        return .terminateLater
     }
 }
 

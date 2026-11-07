@@ -63,3 +63,25 @@ final class WritingToolsBindingTests: LibraryUITestCase {
         XCTAssertEqual(model.editor?.bodyController.writingToolsBehavior, EditorWritingToolsBehavior.none)
     }
 }
+
+@MainActor
+final class PolicyRefreshOnActivationTests: LibraryUITestCase {
+    func testAManagedChangeWhileRunningTakesEffectWhenTheAppBecomesActive() async throws {
+        let isolated = makeIsolatedDefaults()
+        addTeardownBlock { UserDefaults(suiteName: isolated.name)?.removePersistentDomain(forName: isolated.name) }
+        let managed = FakeManagedPolicy()
+        let policy = WritingAssistancePolicy(defaults: isolated.defaults, managed: managed, availability: FakeAvailability())
+        policy.setSystemWritingToolsEnabled(true)
+        let center = NotificationCenter()
+        let model = AppModel(dataDirectory: try makeDirectory(), openLibrary: { [self] in try await openLibrary(at: $0) })
+        model.bindWritingTools(to: policy, center: center)
+        await model.open()
+        await model.requestNewSnippet()
+        XCTAssertEqual(model.editor?.bodyController.writingToolsBehavior, .default)
+
+        managed.value = .forbidden  // a profile arrives while the app runs; nothing has asked the policy yet
+        XCTAssertEqual(model.editor?.bodyController.writingToolsBehavior, .default)
+        center.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        XCTAssertEqual(model.editor?.bodyController.writingToolsBehavior, EditorWritingToolsBehavior.none)
+    }
+}

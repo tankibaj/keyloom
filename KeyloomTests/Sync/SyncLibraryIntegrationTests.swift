@@ -36,9 +36,10 @@ final class SyncLibraryIntegrationTests: SyncTestCase {
         let second = try makeDevice(idStart: 20_000)
         let library = try await SnippetLibrary(store: second.store)
         second.useController(onLibraryChanged: { await library.reloadAfterSync() })
+        let stream = library.changes
         let observed = Task { () -> [LibraryChange] in
             var seen: [LibraryChange] = []
-            for await change in library.changes { seen.append(change) }
+            for await change in stream { seen.append(change) }
             return seen
         }
         await first.enableSync()

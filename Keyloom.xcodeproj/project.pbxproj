@@ -34,6 +34,13 @@
 			remoteGlobalIDString = 7A0000000000000000000051;
 			remoteInfo = Keyloom;
 		};
+		7A0000000000000000000A02 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7A0000000000000000000090 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7A0000000000000000000051;
+			remoteInfo = Keyloom;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -55,6 +62,7 @@
 		7A000000000000000000010B /* CloudProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudProbeTests.swift; sourceTree = "<group>"; };
 		7A000000000000000000010D /* KeyloomProbe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KeyloomProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A000000000000000000010E /* KeyloomProbeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeyloomProbeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A0000000000000000000020 /* KeyloomUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeyloomUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -66,6 +74,11 @@
 		7A0000000000000000000042 /* KeyloomTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = KeyloomTests;
+			sourceTree = "<group>";
+		};
+		7A0000000000000000000043 /* KeyloomUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = KeyloomUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -99,6 +112,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A0000000000000000000033 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -107,6 +127,7 @@
 			children = (
 				7A0000000000000000000041 /* Keyloom */,
 				7A0000000000000000000042 /* KeyloomTests */,
+				7A0000000000000000000043 /* KeyloomUITests */,
 				7A0000000000000000000044 /* Build */,
 				7A0000000000000000000401 /* Feasibility */,
 				7A0000000000000000000045 /* Products */,
@@ -162,6 +183,7 @@
 			children = (
 				7A0000000000000000000015 /* Keyloom.app */,
 				7A0000000000000000000016 /* KeyloomTests.xctest */,
+				7A0000000000000000000020 /* KeyloomUITests.xctest */,
 				7A000000000000000000010D /* KeyloomProbe.app */,
 				7A000000000000000000010E /* KeyloomProbeTests.xctest */,
 			);
@@ -242,6 +264,26 @@
 			productReference = 7A000000000000000000010E /* KeyloomProbeTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		7A0000000000000000000053 /* KeyloomUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A0000000000000000000073 /* Build configuration list for PBXNativeTarget "KeyloomUITests" */;
+			buildPhases = (
+				7A0000000000000000000063 /* Sources */,
+				7A0000000000000000000033 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7A0000000000000000000B02 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7A0000000000000000000043 /* KeyloomUITests */,
+			);
+			name = KeyloomUITests;
+			productName = KeyloomUITests;
+			productReference = 7A0000000000000000000020 /* KeyloomUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -267,6 +309,7 @@
 			targets = (
 				7A0000000000000000000051 /* Keyloom */,
 				7A0000000000000000000052 /* KeyloomTests */,
+				7A0000000000000000000053 /* KeyloomUITests */,
 				7A0000000000000000000501 /* KeyloomProbe */,
 				7A0000000000000000000502 /* KeyloomProbeTests */,
 			);
@@ -319,6 +362,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A0000000000000000000063 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -326,6 +376,11 @@
 			isa = PBXTargetDependency;
 			target = 7A0000000000000000000051 /* Keyloom */;
 			targetProxy = 7A0000000000000000000A01 /* PBXContainerItemProxy */;
+		};
+		7A0000000000000000000B02 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7A0000000000000000000051 /* Keyloom */;
+			targetProxy = 7A0000000000000000000A02 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -390,6 +445,30 @@
 				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Keyloom.app/Contents/MacOS/Keyloom";
+			};
+			name = Release;
+		};
+		7A0000000000000000000087 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_TARGET_NAME = Keyloom;
+			};
+			name = Debug;
+		};
+		7A0000000000000000000088 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_TARGET_NAME = Keyloom;
 			};
 			name = Release;
 		};
@@ -469,6 +548,15 @@
 			buildConfigurations = (
 				7A0000000000000000000085 /* Debug */,
 				7A0000000000000000000086 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7A0000000000000000000073 /* Build configuration list for PBXNativeTarget "KeyloomUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A0000000000000000000087 /* Debug */,
+				7A0000000000000000000088 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -16,6 +16,73 @@ final class RichTextController: NSObject, NSTextViewDelegate {
 
     @ObservationIgnored private var pendingDocument: Document?
 
+    /// True while the text view selects characters; the assistance menu is offered only then.
+    private(set) var hasSelection = false
+
+    /// The selection as UTF-16 offsets of the document's plain text (what `EditRequest` uses): paragraphs joined
+    /// by newlines, list markers not counted. Nil without a selection.
+    func selectionInDocument() -> ValidatedUTF16Range? {
+        guard let textView, let storage = textView.textStorage else { return nil }
+        let selection = textView.selectedRange()
+        guard selection.length > 0 else { return nil }
+        let ranges = RichTextConverter.paragraphRanges(in: storage.string)
+        func offset(_ location: Int) -> Int {
+            var total = 0
+            for range in ranges {
+                let marker = RichTextConverter.markerLength(in: storage, paragraph: range)
+                if location <= range.upperBound { return total + max(0, location - range.location - marker) }
+                total += range.length - marker + 1
+            }
+            return total
+        }
+        return try? ValidatedUTF16Range(start: offset(selection.location), end: offset(selection.upperBound),
+                                        in: RichTextConverter.document(from: storage).plainText)
+    }
+
+    /// Replaces the whole body with the suggestion's document as ONE undoable edit (Edit > Undo restores the
+    /// original and Redo reapplies it), publishes it like typing, and selects the replaced words.
+    func applySuggestion(_ payload: ApplyPayload) {
+        let replacement = RichTextConverter.attributedString(from: payload.document)
+        replaceBody(with: replacement, selecting: Self.viewRange(for: payload.selection, in: replacement), actionName: "Apply Suggestion")
+    }
+
+    /// Swaps the whole text and registers its own inverse, so undo and redo are single steps whatever the text
+    /// view's per-edit grouping does with token chips.
+    private func replaceBody(with replacement: NSAttributedString, selecting selection: NSRange, actionName: String) {
+        guard let textView, let storage = textView.textStorage else { return }
+        let previous = NSAttributedString(attributedString: storage)
+        let previousSelection = textView.selectedRange()
+        isApplying = true
+        storage.setAttributedString(replacement)
+        textView.setSelectedRange(selection)
+        isApplying = false
+        let document = RichTextConverter.document(from: storage)
+        hasCursorToken = Self.containsCursor(document)
+        refreshState()
+        onChange?(document)
+        textView.undoManager?.registerUndo(withTarget: self) { controller in
+            MainActor.assumeIsolated { controller.replaceBody(with: previous, selecting: previousSelection, actionName: actionName) }
+        }
+        textView.undoManager?.setActionName(actionName)
+    }
+
+    /// A range in document offsets, as a range in the text view's string (which also holds list markers).
+    private static func viewRange(for range: ValidatedUTF16Range, in text: NSAttributedString) -> NSRange {
+        let paragraphs = RichTextConverter.paragraphRanges(in: text.string)
+        func location(_ documentOffset: Int) -> Int {
+            var remaining = documentOffset
+            for paragraph in paragraphs {
+                let marker = RichTextConverter.markerLength(in: text, paragraph: paragraph)
+                let content = paragraph.length - marker
+                if remaining <= content { return paragraph.location + marker + remaining }
+                remaining -= content + 1
+            }
+            return text.length
+        }
+        let start = location(range.start)
+        return NSRange(location: start, length: max(0, location(range.end) - start))
+    }
+
     /// What the system's Writing Tools may do in the body. Off until the policy says otherwise.
     var writingToolsBehavior: EditorWritingToolsBehavior = .none {
         didSet { textView?.writingToolsBehavior = Self.nsBehavior(writingToolsBehavior) }
@@ -233,6 +300,7 @@ final class RichTextController: NSObject, NSTextViewDelegate {
         guard let textView, let storage = textView.textStorage else { return }
         sanitizeTypingAttributes()
         let selection = textView.selectedRange()
+        hasSelection = selection.length > 0
         activeStyles = selection.length > 0 && selection.location < storage.length
             ? RichTextConverter.style(of: storage.attributes(at: selection.location, effectiveRange: nil))
             : RichTextConverter.style(of: textView.typingAttributes)

@@ -84,3 +84,17 @@ struct InertSyncAdapter: SyncEngineAdapter {
     func stop() async {}
     func syncNow() async throws {}
 }
+
+/// The on-device model is always reported available in UI-test runs, and answers with its own prompt: the whole
+/// assistance flow can be driven without Apple Intelligence, and Foundation Models is never touched.
+struct InertModelAvailability: ModelAvailabilityProvider {
+    func availability(for locale: Locale) -> ModelAvailability { .available }
+}
+
+struct EchoModelSessionFactory: AssistanceModelSessionFactory {
+    private struct Session: AssistanceModelSession {
+        func respond(to prompt: String) async throws -> String { prompt }
+    }
+
+    func makeSession(instructions: String) throws -> any AssistanceModelSession { Session() }
+}

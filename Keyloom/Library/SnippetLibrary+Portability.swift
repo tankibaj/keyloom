@@ -45,7 +45,7 @@ extension SnippetLibrary {
         _ = try await snapshots.takeSafeguard(.preImport, snippets: allSnippets())
         let result = try await store.importBatch(chosen.map(\.snippet))
         try await reload()
-        for snippet in result.stored { changeContinuation.yield(.created(snippet.id)) }
+        for snippet in result.stored { broadcaster.yield(.created(snippet.id)) }
         // The preview already disabled what it saw clashing; the store disables what clashed since. `stored` keeps input order.
         let disabled = zip(chosen, result.stored).filter { $0.conflictsWith != nil || result.disabledForKeywordConflict.contains($1.id) }.map(\.1.id)
         return ImportOutcome(imported: result.stored, disabledForKeywordConflict: disabled)
@@ -66,9 +66,9 @@ extension SnippetLibrary {
         _ = try await snapshots.takeSafeguard(.preRestore, snippets: allSnippets())
         let result = try await store.restoreLibrary(to: contents.snippets)
         try await reload()
-        for id in result.created { changeContinuation.yield(.created(id)) }
-        for id in result.updated { changeContinuation.yield(.updated(id)) }
-        for id in result.deleted { changeContinuation.yield(.deleted(id)) }
+        for id in result.created { broadcaster.yield(.created(id)) }
+        for id in result.updated { broadcaster.yield(.updated(id)) }
+        for id in result.deleted { broadcaster.yield(.deleted(id)) }
         return RestoreOutcome(created: result.created, updated: result.updated, deleted: result.deleted,
                               disabledForKeywordConflict: result.disabledForKeywordConflict)
     }

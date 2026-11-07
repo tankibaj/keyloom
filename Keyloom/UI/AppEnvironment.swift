@@ -23,6 +23,7 @@ final class AppEnvironment {
         let picker: PickerCoordinator
         let menuBar: MenuBarModel
         let settings: SettingsModels
+        let sync: SyncController
     }
 
     let model: AppModel
@@ -30,13 +31,18 @@ final class AppEnvironment {
     private(set) var services: Services?
 
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let syncAdapter: (any SyncEngineAdapter)?
+    @ObservationIgnored private var syncTriggers: SyncTriggers?
+    @ObservationIgnored private var syncLaunch: Task<Void, Never>?
     @ObservationIgnored private let promptPresenter = PromptPanelPresenter()
     @ObservationIgnored private let pickerPanel = PickerPanelPresenter()
 
-    init(model: AppModel = AppModel(), mode: LaunchMode = .resolve(), defaults: UserDefaults? = nil) {
+    init(model: AppModel = AppModel(), mode: LaunchMode = .resolve(), defaults: UserDefaults? = nil,
+         syncAdapter: (any SyncEngineAdapter)? = nil) {
         self.model = model
         self.mode = mode
         self.defaults = defaults ?? Self.defaults(for: mode)
+        self.syncAdapter = syncAdapter
     }
 
     /// UI-test runs start from empty preferences in their own domain and never touch the real ones.
@@ -59,10 +65,14 @@ final class AppEnvironment {
         host.start()
         // `library.syncStore` is the one store; sync changes reach the UI through `reloadAfterSync`.
         let syncPreference = SyncPreference(defaults: defaults)
-        let sync = SyncController(store: library.syncStore, adapter: mode == .live ? CKSyncEngineAdapter() : InertSyncAdapter(),
-                                  preference: syncPreference, onLibraryChanged: { await library.reloadAfterSync() })
-        await sync.launch()
-        let assistancePolicy = WritingAssistancePolicy(defaults: defaults)
+        let adapter: any SyncEngineAdapter = syncAdapter ?? (mode == .live ? CKSyncEngineAdapter() : InertSyncAdapter())
+        let sync = SyncController(store: library.syncStore, adapter: adapter, preference: syncPreference,
+                                  onLibraryChanged: { await library.reloadAfterSync() })
+        let assistancePolicy = mode == .live
+            ? WritingAssistancePolicy(defaults: defaults)
+            : WritingAssistancePolicy(defaults: defaults, availability: InertModelAvailability())
+        let assistance = AssistanceService.make(policy: assistancePolicy,
+                                                sessions: mode == .live ? SystemModelSessionFactory() : EchoModelSessionFactory())
         let settings = SettingsModels(
             appearance: AppearanceSettings(defaults: defaults), shortcut: ShortcutSettingsModel(host: host),
             expansion: ExpansionSettingsModel(host: host),
@@ -70,9 +80,22 @@ final class AppEnvironment {
             sync: SyncSettingsViewModel(controller: sync, preference: syncPreference),
             assistance: WritingAssistanceSettingsModel(policy: assistancePolicy))
         settings.appearance.applyCurrent()
-        model.bindWritingTools(to: assistancePolicy)
+        model.bindWritingTools(to: assistancePolicy, assistance: assistance)
         model.observeDayChanges()
         services = Services(host: host, picker: picker, menuBar: MenuBarModel(library: library, host: host, picker: picker),
-                            settings: settings)
+                            settings: settings, sync: sync)
+        // Only now: the account check and first sync go to the network, and the menu bar and Settings must
+        // already be usable while iCloud answers (or does not).
+        let triggers = SyncTriggers(controller: sync, library: library,
+                                    accountChanges: mode == .live ? CKSyncEngineAdapter.accountChanges() : AsyncStream { $0.finish() })
+        triggers.start()
+        syncTriggers = triggers
+        syncLaunch = Task { await sync.launch() }
+    }
+
+    /// For quitting: stops the sync engine (the saved switch is kept) and the triggers feeding it.
+    func shutdown() async {
+        syncTriggers?.stop()
+        await services?.sync.shutdown()
     }
 }

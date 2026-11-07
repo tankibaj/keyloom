@@ -92,7 +92,7 @@ build_archive() {
   xcodebuild archive \
     -project "$ROOT/Keyloom.xcodeproj" -scheme Keyloom -configuration Release \
     -destination 'generic/platform=macOS' -archivePath "$ARCHIVE" -derivedDataPath "$OUT/derived" \
-    ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO ENABLE_HARDENED_RUNTIME=YES \
+    ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO ENABLE_HARDENED_RUNTIME=YES ENABLE_TESTABILITY=NO \
     >"$OUT/xcodebuild.log" 2>&1 || { print -u2 "release: archive failed, see $(relpath "$OUT/xcodebuild.log")"; return 1 }
 }
 
