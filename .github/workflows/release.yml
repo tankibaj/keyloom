@@ -1,19 +1,52 @@
 name: Release
 
+# Builds and releases when MARKETING_VERSION changes on main (or on demand). The tag is created by the release
+# itself, after the build, signing and packaging succeeded, so a failed build never leaves a tag behind.
+# Version policy: bump MARKETING_VERSION in the pbxproj and push to main.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths: ["Keyloom.xcodeproj/project.pbxproj"]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version without the leading v (must equal MARKETING_VERSION), e.g. 0.1.0"
-        required: true
+        description: "Optional: must equal MARKETING_VERSION (default). Re-runs a release that has no tag yet."
+        required: false
 
 permissions:
   contents: write
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      needed: ${{ steps.v.outputs.needed }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          versions="$(grep -E 'MARKETING_VERSION = ' Keyloom.xcodeproj/project.pbxproj | sed -E 's/.*= ([^;]+);/\1/' | sort -u)"
+          if [[ -z "$versions" || "$(wc -l <<<"$versions")" -ne 1 ]]; then
+            echo "MARKETING_VERSION is not a single value: $versions"; exit 1
+          fi
+          v="$versions"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || { echo "bad version: $v"; exit 1; }
+          if [[ -n "${INPUT_VERSION#v}" && "${INPUT_VERSION#v}" != "$v" ]]; then
+            echo "input $INPUT_VERSION differs from MARKETING_VERSION $v"; exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null 2>&1; then
+            echo "v$v already released; nothing to do"; echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
+    needs: check
+    if: needs.check.outputs.needed == 'true'
     # UNVERIFIED: confirm the `macos-26` runner label and an Xcode 26+ install (see ci.yml).
     runs-on: macos-26
     timeout-minutes: 60
@@ -25,20 +58,10 @@ jobs:
 
       - name: Resolve version
         env:
-          INPUT_VERSION: ${{ inputs.version }}
+          CHECKED_VERSION: ${{ needs.check.outputs.version }}
         run: |
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then v="${GITHUB_REF_NAME#v}"; else v="${INPUT_VERSION#v}"; fi
-          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || { echo "bad version: $v"; exit 1; }
-          echo "VERSION=$v" >> "$GITHUB_ENV"
-          echo "TAG=v$v" >> "$GITHUB_ENV"
-
-      # Version policy: the tag must match MARKETING_VERSION (bump it in the pbxproj, then tag).
-      - name: Check MARKETING_VERSION matches tag
-        run: |
-          versions="$(grep -E 'MARKETING_VERSION = ' Keyloom.xcodeproj/project.pbxproj | sed -E 's/.*= ([^;]+);/\1/' | sort -u)"
-          if [[ "$versions" != "$VERSION" ]]; then
-            echo "MARKETING_VERSION ($versions) differs from $VERSION"; exit 1
-          fi
+          echo "VERSION=$CHECKED_VERSION" >> "$GITHUB_ENV"
+          echo "TAG=v$CHECKED_VERSION" >> "$GITHUB_ENV"
 
       - name: Select newest Xcode
         run: |
@@ -82,7 +105,7 @@ jobs:
           prerelease=""
           [[ "$VERSION" == *-* ]] && prerelease="--prerelease"
           gh release create "$TAG" "$ZIP" "$ZIP.sha256" \
-            --title "Keyloom $VERSION" --generate-notes --verify-tag $prerelease \
+            --title "Keyloom $VERSION" --generate-notes --target "$GITHUB_SHA" $prerelease \
             || gh release upload "$TAG" "$ZIP" "$ZIP.sha256" --clobber
 
       - name: Checkout Homebrew tap
