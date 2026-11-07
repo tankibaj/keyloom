@@ -53,10 +53,9 @@ class PickerTestCase: LibraryUITestCase {
 }
 
 final class PickerSearchTests: PickerTestCase {
-    func testOpeningCapturesTheDestinationBeforeTheWindowAndRemembersIt() async throws {
+    func testOpeningShowsThePanelAndRemembersTheFrontmostApp() async throws {
         try await makePicker { try await self.seed($0, "Hello") }
-        let model = try await openPicker()
-        XCTAssertNotNil(model.destination)
+        try await openPicker()
         XCTAssertEqual(panel.shown.count, 1)
         XCTAssertEqual(focus.remembered, 1, "The frontmost app is noted before Keyloom activates")
         XCTAssertTrue(harness.destination.writes.isEmpty, "Opening never touches the destination")
@@ -149,52 +148,32 @@ final class PickerSearchTests: PickerTestCase {
 }
 
 final class PickerActionTests: PickerTestCase {
-    func testInsertWritesToTheCapturedDestinationRecordsUsageAndHidesThePanel() async throws {
-        var seeded: Snippet!
-        try await makePicker { seeded = try await self.seed($0, "Hello", body: "Hello") }
+    func testReturnCopiesTheSelectionRecordsNoInsertAndClosesThePicker() async throws {
+        try await makePicker { try await self.seed($0, "Hello", body: "Hello") }
         let model = try await openPicker()
-        await model.insertSelected()
-        XCTAssertEqual(harness.destination.text, "Dear Hello tail")
+        await model.copySelected()  // what Return and double-click run
+        XCTAssertEqual(harness.pasteboard.plain, "Hello")
         XCTAssertEqual(panel.hideCount, 1)
-        XCTAssertEqual(harness.controller.status.lastOutcome, .replaced(mode: .plain, verified: true, clipboard: .notTouched))
-        await harness.controller.waitForUsageRecording()
-        let used = await library.snippet(id: seeded.id)?.lastUsedAt
-        XCTAssertNotNil(used, "The picker records usage through the host insert path")
-        XCTAssertEqual(harness.pasteboard.plain, UIHostHarness.userClipboard, "Plain insertion never touches the clipboard")
+        XCTAssertEqual(focus.restored, 1)
+        XCTAssertNil(model.notice)
     }
 
-    func testInsertAsksForArgumentsThenInsertsTheAnswers() async throws {
+    func testCopyAsksForArgumentsThenCopiesTheAnswers() async throws {
         try await makePicker { try await self.seed($0, "Hello", body: #"Hi {argument name="who"} and {argument name="who"}"#) }
         prompter.answers = ["who": "Ada"]
         let model = try await openPicker()
-        await model.insertSelected()
+        await model.copySelected()
         XCTAssertEqual(prompter.requests.count, 1)
-        XCTAssertEqual(prompter.requests.first?.map(\.name), ["who"])
-        XCTAssertEqual(harness.destination.text, "Dear Hi Ada and Ada tail")
+        XCTAssertEqual(harness.pasteboard.plain, "Hi Ada and Ada")
     }
 
-    func testCancellingThePromptLeavesTheDestinationAloneAndReturnsFocus() async throws {
-        var seeded: Snippet!
-        try await makePicker { seeded = try await self.seed($0, "Hello", body: #"Hi {argument name="who"}"#) }
+    func testCancellingThePromptCopiesNothingAndReturnsFocus() async throws {
+        try await makePicker { try await self.seed($0, "Hello", body: #"Hi {argument name="who"}"#) }
         prompter.answers = nil
         let model = try await openPicker()
-        await model.insertSelected()
-        XCTAssertEqual(harness.destination.text, "Dear  tail")
-        XCTAssertTrue(harness.destination.writes.isEmpty)
+        await model.copySelected()
+        XCTAssertEqual(harness.pasteboard.plain, UIHostHarness.userClipboard)
         XCTAssertEqual(focus.restored, 1)
-        let used = await library.snippet(id: seeded.id)?.lastUsedAt
-        XCTAssertNil(used)
-    }
-
-    func testARefusedInsertLeavesTextIntactAndReopensThePickerOfferingCopy() async throws {
-        try await makePicker { try await self.seed($0, "Hello", body: "Hello") }
-        let model = try await openPicker()
-        harness.destination.token = FocusToken(pid: 200, element: 9)  // the user moved to another field meanwhile
-        await model.insertSelected()
-        XCTAssertEqual(harness.destination.text, "Dear  tail")
-        XCTAssertEqual(panel.shown.count, 2, "The picker comes back so the user can Copy")
-        XCTAssertNotNil(model.notice)
-        XCTAssertTrue(model.canCopy)
     }
 
     func testCopyPutsTheSnippetOnTheClipboardAndHidesWithoutInserting() async throws {
@@ -205,20 +184,6 @@ final class PickerActionTests: PickerTestCase {
         XCTAssertEqual(harness.controller.status.lastOutcome, .copied)
         XCTAssertEqual(harness.destination.text, "Dear  tail")
         XCTAssertEqual(panel.hideCount, 1)
-    }
-
-    func testWithoutADestinationInsertIsOffButCopyWorks() async throws {
-        try await makePicker { try await self.seed($0, "Hello", body: "Hello") }
-        harness.environment.isSecureInputActive = true
-        let model = try await openPicker()
-        XCTAssertNil(model.destination)
-        XCTAssertFalse(model.canInsert)
-        XCTAssertNotNil(model.notice, "Says why only Copy is offered")
-        await model.insertSelected()
-        XCTAssertTrue(harness.destination.writes.isEmpty)
-        XCTAssertEqual(panel.hideCount, 0)
-        await model.copySelected()
-        XCTAssertEqual(harness.pasteboard.plain, "Hello")
     }
 
     func testEscapeHidesAndReturnsFocusWithoutTouchingAnything() async throws {

@@ -58,9 +58,7 @@ final class SmokeJourneyTests: KeyloomUITestCase {
         let search = app.textFields["picker.search"]
         XCTAssertTrue(search.waitForExistence(timeout: 10), "picker did not open")
         attachScreenshot("picker empty library")
-        // The inert host has no focused field, so the picker explains that only Copy is offered.
-        XCTAssertTrue(app.staticTexts["picker.notice"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["picker.insert"].isEnabled)
+        XCTAssertFalse(app.buttons["picker.copy"].isEnabled)
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(search.waitForNonExistence(timeout: 10), "Escape closes the picker")
     }

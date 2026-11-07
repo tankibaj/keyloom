@@ -135,6 +135,5 @@ final class MenuBarModelTests: PickerTestCase {
         try await makeMenu { try await self.seed($0, "Hello") }
         menu.openPicker()
         XCTAssertEqual(panel.shown.count, 1)
-        XCTAssertNotNil(coordinator.model?.destination)
     }
 }

@@ -15,9 +15,8 @@ protocol FocusRestoring: AnyObject {
     func restore()
 }
 
-/// The UI's `PickerPresenting`. The host captures the destination first and calls `presentPicker` with it; the
-/// frontmost app is noted before Keyloom comes forward and the destination lives in the session, so a later
-/// Insert goes where the user was, not where focus is now.
+/// The UI's `PickerPresenting`. The frontmost app is noted before Keyloom comes forward so focus goes back to it
+/// after a copy. The picker only copies; the host's captured destination is used only by the menu bar.
 @MainActor
 final class PickerCoordinator: PickerPresenting {
     private(set) var model: PickerModel?
@@ -54,7 +53,7 @@ final class PickerCoordinator: PickerPresenting {
         }
         guard let inserter else { return }
         focus.rememberFrontmost()
-        let session = PickerModel(library: library, inserter: inserter, destination: destination)
+        let session = PickerModel(library: library, inserter: inserter)
         session.onHide = { [weak self] in self?.panel.hide() }
         session.onReshow = { [weak self, weak session] in
             if let self, let session { panel.show(session) }

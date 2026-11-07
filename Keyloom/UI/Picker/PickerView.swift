@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The global quick picker: search at the top, matches on the left, preview on the right. Return inserts (or
-/// copies when no field can take text), Command-Return copies, arrows move, Escape closes.
+/// The global quick picker: search at the top, matches on the left, preview on the right. Return copies the
+/// selection and closes, arrows move, Escape closes.
 struct PickerView: View {
     @Bindable var model: PickerModel
     @FocusState private var searchFocused: Bool
@@ -62,7 +62,6 @@ struct PickerView: View {
                 SnippetRowView(row: row).tag(row.id)
             }
             .contextMenu(forSelectionType: UUID.self) { _ in
-                Button("Insert") { Task { await model.insertSelected() } }.disabled(!model.canInsert)
                 Button("Copy") { Task { await model.copySelected() } }
             } primaryAction: { _ in
                 Task { await submit() }
@@ -102,23 +101,18 @@ struct PickerView: View {
                     .accessibilityIdentifier("picker.notice")
             }
             Spacer(minLength: 0)
+            Text("Return to copy").font(.caption).foregroundStyle(.secondary)
             Button("Copy") { Task { await model.copySelected() } }
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!model.canCopy)
-                .help("Copy to the clipboard (⌘↩)")
-                .accessibilityIdentifier("picker.copy")
-            Button("Insert") { Task { await model.insertSelected() } }
+                .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .disabled(!model.canInsert)
-                .help("Insert into the app you were in (↩)")
-                .accessibilityIdentifier("picker.insert")
+                .disabled(!model.canCopy)
+                .help("Copy to the clipboard (↩)")
+                .accessibilityIdentifier("picker.copy")
         }
         .padding(10)
     }
 
-    private func submit() async {
-        if model.canInsert { await model.insertSelected() } else { await model.copySelected() }
-    }
+    private func submit() async { await model.copySelected() }
 }
 
 /// A borderless floating panel centred in the upper third of the screen the pointer is on.

@@ -6,18 +6,16 @@ enum PickerEmptyState: Equatable {
     case noResults(query: String)
 }
 
-/// One picker session: search, selection, preview, Insert and Copy. `destination` was captured by the host before
-/// the window existed and is only ever handed back to it, which re-verifies the field. Typing runs the local
-/// search only: no model, no network.
+/// One picker session: search, selection, preview and Copy (the picker only copies, it never inserts). Typing
+/// runs the local search only: no model, no network.
 @MainActor @Observable
 final class PickerModel {
-    let destination: CapturedDestination?
     var query = "" { didSet { if query != oldValue { search() } } }
     private(set) var rows: [SnippetRow] = []
     var selection: UUID? { didSet { if selection != oldValue { loadPreview() } } }
     private(set) var emptyState: PickerEmptyState?
     private(set) var preview: Preview?
-    /// What to tell the user: why only Copy is offered, or why the last Insert did nothing.
+    /// What to tell the user when the last Copy did nothing.
     private(set) var notice: String?
     @ObservationIgnored var onHide: (@MainActor () -> Void)?
     @ObservationIgnored var onReshow: (@MainActor () -> Void)?
@@ -28,17 +26,12 @@ final class PickerModel {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
 
-    init(library: SnippetLibrary, inserter: SnippetInserter, destination: CapturedDestination?) {
+    init(library: SnippetLibrary, inserter: SnippetInserter) {
         self.library = library
         self.inserter = inserter
-        self.destination = destination
-        if destination == nil {
-            notice = "Insert isn’t available in this field (it may be secure, excluded or unreadable, or a permission is missing), so the picker can only copy."
-        }
         search()
     }
 
-    var canInsert: Bool { destination != nil && selection != nil }
     var canCopy: Bool { selection != nil }
 
     /// Waits for the search and preview work started so far.
@@ -52,21 +45,7 @@ final class PickerModel {
         selection = rows[min(max(current + delta, 0), rows.count - 1)].id
     }
 
-    /// Hides the window first (the host brings the destination app forward), and brings it back with a message
-    /// when nothing was inserted, so the user can Copy instead.
-    func insertSelected() async {
-        guard let destination, let id = selection else { return }
-        notice = nil
-        onHide?()
-        switch await inserter.insert(snippetID: id, into: destination) {
-        case nil: onReturnFocus?()
-        case .replaced?: break
-        case let outcome?:
-            notice = Self.message(for: outcome)
-            onReshow?()
-        }
-    }
-
+    /// Hides the window first, then copies; comes back with a message when nothing was copied.
     func copySelected() async {
         guard let id = selection else { return }
         notice = nil
@@ -126,12 +105,10 @@ final class PickerModel {
 
     private static func message(for outcome: InsertionOutcome) -> String {
         switch outcome {
-        case .failedClosed(.permissionRevoked):
-            "Keyloom needs Accessibility and Input Monitoring access to insert. Copy the snippet instead, or grant access in Settings."
         case .failedClosed(.snippetUnavailable):
             "This snippet no longer exists."
         default:
-            "Keyloom couldn’t confirm the field you were in, so it left your text unchanged. Copy the snippet instead."
+            "Keyloom couldn’t copy this snippet."
         }
     }
 }

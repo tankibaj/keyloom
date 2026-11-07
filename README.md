@@ -27,7 +27,7 @@ Templates support these tokens:
 | `{argument name="…" default="…"}` | asked for in a prompt before inserting (can offer choices) |
 | `{cursor}` | where the caret lands after insertion |
 
-Bold, italic, underline and lists are kept where the destination takes styled text. A keyword matches the moment its last character is typed (no delimiter). The picker (default `⌃⌥Space`) and the menu bar insert a snippet without typing its keyword. Raycast snippets can be imported; snippets export to a native format. Daily snapshots back up the library.
+Bold, italic, underline and lists are kept where the destination takes styled text. A keyword matches the moment its last character is typed (no delimiter). The picker (default `⌃⌥Space`, Return to copy) copies a snippet to the clipboard; the menu bar inserts one without typing its keyword. Raycast snippets can be imported; snippets export to a native format. Daily snapshots back up the library.
 
 ## Install and develop
 
