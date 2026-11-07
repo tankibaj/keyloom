@@ -10,7 +10,10 @@ struct SyncStatusPresentation: Equatable {
 
     init(_ status: SyncStatus) { self.status = status }
 
-    /// Sync Now is offered only when it can do something; the switch is always available.
+    /// A build iCloud was never set up for: the switch cannot do anything, so it shows off and is disabled.
+    var isUnsupportedBuild: Bool { status == .unavailable(.buildNotProvisioned) }
+
+    /// Sync Now is offered only when it can do something; the switch is always available except on an unsupported build.
     var canSyncNow: Bool {
         switch status {
         case .upToDate, .quotaExceeded, .failed: true
@@ -109,7 +112,7 @@ final class SyncSettingsViewModel {
     }
 
     var pendingNote: String? {
-        pendingChanges == 0 || !isEnabled ? nil : String(localized: "\(pendingChanges) changes waiting to upload")
+        pendingChanges == 0 || !isEnabled || presentation.isUnsupportedBuild ? nil : String(localized: "\(pendingChanges) changes waiting to upload")
     }
 
     // MARK: Actions

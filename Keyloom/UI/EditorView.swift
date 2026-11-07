@@ -22,7 +22,10 @@ struct EditorView: View {
 
     private var sideBySide: Bool { width >= Self.sideBySideWidth }
     /// Side by side, the panes take the height the rows above leave, so a tall window has no empty band under them.
-    private var bodyMinHeight: CGFloat { sideBySide ? max(180, height - Self.aboveBodyHeight) : 180 }
+    private var bodyMinHeight: CGFloat {
+        // Stacked, the preview keeps its own 120 pt and the gap; side by side it shares the row.
+        sideBySide ? max(180, height - Self.aboveBodyHeight) : max(180, height - Self.aboveBodyHeight - 140)
+    }
     /// The header, keyword and tag rows, the pane chrome (formatting and insert bars), the usage line and the margins.
     private static let aboveBodyHeight: CGFloat = 400
 
@@ -160,6 +163,8 @@ struct EditorView: View {
                     Label(message, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.secondary)
                 }
             }
+            // One caption line is always reserved, so a verdict appearing does not shift the rows below.
+            .frame(minHeight: 16, alignment: .topLeading)
             .padding(.leading, Self.labelWidth + 10)
         }
         .task(id: KeywordKey(keyword: editor.draft.keyword, enabled: editor.draft.enabled)) {
@@ -189,7 +194,13 @@ struct EditorView: View {
             .textFieldStyle(.plain)
             .font(.body.monospaced())
             .fieldBackground()
-            .frame(width: 150)
+            .frame(minWidth: 150, idealWidth: 150, maxWidth: 240)
+            .fixedSize(horizontal: false, vertical: true)
+            // A keyword is typed without gaps; the library rejects whitespace anyway.
+            .onChange(of: editor.draft.keyword) { _, value in
+                let cleaned = SnippetDraft.sanitizedKeyword(value)
+                if cleaned != value { editor.draft.keyword = cleaned }
+            }
             .accessibilityLabel("Expansion keyword")
     }
 

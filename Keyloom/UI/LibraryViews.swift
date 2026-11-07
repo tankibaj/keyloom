@@ -75,21 +75,31 @@ struct ExpansionStatusChip: View {
     }
 }
 
-/// A sidebar label with a small, quiet glyph: 13 pt, secondary, one 16 pt column so the titles line up.
+/// A sidebar label like Shortcuts': the system's accent-tinted glyph, small.
 private struct SidebarLabel: View {
     let title: String
     let symbol: String
-    /// A tag's own color for its glyph; nil keeps the quiet secondary tone.
+    /// A tag's own color for its glyph; nil keeps the accent tint.
     var tint: Color?
 
+    /// Resizable into a fixed 13 pt box: the sidebar's own icon scale ignores `font` and `imageScale`.
+    private var glyph: some View {
+        Image(systemName: symbol).resizable().scaledToFit().frame(width: 13, height: 13)
+    }
+
     var body: some View {
+        // The system sidebar label tints its glyph with the accent and turns it white on the selected row; only a
+        // tag's own color overrides that.
+        // An explicit size (the sidebar's own icon scale runs larger than the 13 pt text); no explicit style, so the
+        // system still tints it with the accent and whitens it on the selected row.
         Label {
             Text(title)
         } icon: {
-            Image(systemName: symbol)
-                .font(.system(size: symbol == "number" ? 11 : 13))
-                .foregroundStyle(tint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
-                .frame(width: 16)
+            if let tint {
+                glyph.foregroundStyle(tint)
+            } else {
+                glyph
+            }
         }
     }
 }
@@ -99,6 +109,8 @@ struct SidebarView: View {
     let tagColors: TagColors
     let status: ExpansionStatus?
     let openAccessibility: () -> Void
+    @State private var renaming: String?
+    @State private var newTagName = ""
 
     var body: some View {
         List(selection: Binding<SidebarItem?>(get: { library.sidebarItem }, set: { if let item = $0 { library.sidebarItem = item } })) {
@@ -111,6 +123,11 @@ struct SidebarView: View {
                 Section("Tags") {
                     ForEach(library.tags, id: \.tag) { summary in
                         SidebarLabel(title: summary.tag, symbol: "number", tint: tagColors.color(for: summary.tag)?.color).badge(summary.count).tag(SidebarItem.tag(summary.tag))
+                            .contextMenu {
+                                Button("Rename…") { renaming = summary.tag; newTagName = summary.tag }
+                                Divider()
+                                TagColorMenuItems(tag: summary.tag, colors: tagColors)
+                            }
                     }
                 }
             }
@@ -119,6 +136,20 @@ struct SidebarView: View {
             }
         }
         .accessibilityLabel("Library navigation")
+        .alert("Rename Tag", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Tag name", text: $newTagName)
+            Button("Rename") {
+                if let old = renaming {
+                    let target = newTagName
+                    tagColors.moveColor(from: old, to: target)
+                    Task { await library.renameTag(old, to: target) }
+                }
+                renaming = nil
+            }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        } message: {
+            Text("Every snippet with this tag gets the new name.")
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let status {
                 ExpansionStatusChip(status: status, openAccessibility: openAccessibility)
@@ -235,6 +266,21 @@ struct SnippetListView: View {
         .navigationTitle(library.title)
         .navigationSubtitle(library.subtitle)
         .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
+        // Over the list column: what orders the list. New lives with the editor's actions.
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Menu {
+                    Picker("Sort By", selection: $library.sort) {
+                        ForEach(LibrarySort.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Label("Sort", systemImage: "arrow.up.arrow.down")
+                }
+                .help("Choose how snippets are ordered")
+                .accessibilityIdentifier("library.sort")
+            }
+        }
     }
 }
 

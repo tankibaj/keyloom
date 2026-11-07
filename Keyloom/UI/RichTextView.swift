@@ -7,6 +7,21 @@ final class BodyTextView: NSTextView {
     override func paste(_ sender: Any?) { pasteAsPlainText(sender) }
 }
 
+/// A scroll view whose text view always fills the visible area, so a click below the last line lands in the text view
+/// (and places the caret at the end) instead of on dead space.
+final class FillingScrollView: NSScrollView {
+    override func layout() {
+        super.layout()
+        guard let textView = documentView as? NSTextView else { return }
+        let visible = contentSize.height
+        if textView.minSize.height != visible {
+            textView.minSize = NSSize(width: 0, height: visible)
+            textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            if textView.frame.height < visible { textView.setFrameSize(NSSize(width: textView.frame.width, height: visible)) }
+        }
+    }
+}
+
 struct RichTextView: NSViewRepresentable {
     let controller: RichTextController
 
@@ -34,7 +49,7 @@ struct RichTextView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
         textView.setAccessibilityLabel("Snippet body")
-        let scroll = NSScrollView()
+        let scroll = FillingScrollView()
         scroll.documentView = textView
         scroll.hasVerticalScroller = true
         scroll.borderType = .noBorder   // the editor pane draws its own rounded border

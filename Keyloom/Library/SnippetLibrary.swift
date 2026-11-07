@@ -143,6 +143,25 @@ actor SnippetLibrary {
         }
     }
 
+    /// Renames a tag on every live snippet that has it. A snippet that already has the new name (any letter case) just
+    /// loses the old one. Returns how many snippets changed; a blank or unchanged name changes nothing.
+    @discardableResult
+    func renameTag(from old: String, to new: String) async throws -> Int {
+        let target = new.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty, target != old else { return 0 }
+        let ids = snapshot.filter { $0.tags.contains(old) }.map(\.id)
+        guard !ids.isEmpty else { return 0 }
+        return try await commit({ _ in .updated(ids[0]) }) { store in
+            for id in ids {
+                guard var current = try await store.snippet(id: id) else { continue }
+                var seen = Set<String>()
+                current.tags = current.tags.map { $0 == old ? target : $0 }.filter { seen.insert(TagColors.normalized($0)).inserted }
+                _ = try await store.update(current)
+            }
+            return ids.count
+        }
+    }
+
     /// A copy with a new ID. A copy of a keyworded snippet starts disabled (see `SnippetStore.duplicate`).
     func duplicate(id: UUID) async throws -> Snippet {
         try await commit({ .created($0.id) }) { try await $0.duplicate(id: id) }

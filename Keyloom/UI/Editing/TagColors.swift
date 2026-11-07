@@ -59,6 +59,38 @@ final class TagColors {
     }
 }
 
+extension TagColors {
+    /// A renamed tag keeps its color (the old name is cleared, a color already on the new name wins).
+    func moveColor(from old: String, to new: String) {
+        let target = new.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let color = color(for: old), !target.isEmpty, TagColors.normalized(old) != TagColors.normalized(target) else { return }
+        set(nil, for: old)
+        if self.color(for: target) == nil { set(color, for: target) }
+    }
+}
+
+/// The palette as menu items; the tag's current color is checked, and choosing it again clears it.
+struct TagColorMenuItems: View {
+    let tag: String
+    let colors: TagColors
+
+    var body: some View {
+        let current = colors.color(for: tag)
+        ForEach(TagColor.allCases) { color in
+            Button {
+                colors.set(color, for: tag)
+            } label: {
+                Label(color.displayName, systemImage: current == color ? "checkmark.circle.fill" : "circle.fill")
+                    .foregroundStyle(color.color)
+            }
+        }
+        if current != nil {
+            Divider()
+            Button("No Color") { colors.set(nil, for: tag) }
+        }
+    }
+}
+
 /// Which existing tags to offer while a tag is typed.
 enum TagSuggestions {
     /// `available` filtered by what is typed (a case-insensitive prefix; nothing typed offers all), without the tags

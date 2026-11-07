@@ -265,6 +265,14 @@ final class LibraryViewModel {
         if let selectionRequest { await selectionRequest(id) } else { selection = id }
     }
 
+    /// Renames a tag everywhere; the sidebar follows the renamed tag.
+    func renameTag(_ old: String, to new: String) async {
+        let target = new.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard await attempt({ try await library.renameTag(from: old, to: new) }) != nil else { return }
+        if sidebarItem == .tag(old) { sidebarItem = .tag(target) }
+        await refresh()
+    }
+
     func togglePin(id: UUID) async {
         guard let pinned = rows.first(where: { $0.id == id })?.pinned else { return }
         guard await attempt({ try await library.setPinned(!pinned, id: id) }) != nil else { return }

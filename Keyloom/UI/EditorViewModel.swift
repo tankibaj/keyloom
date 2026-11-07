@@ -41,6 +41,9 @@ struct SnippetDraft: Equatable {
         text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     }
 
+    /// A keyword is typed without gaps, so whitespace never enters the field.
+    static func sanitizedKeyword(_ text: String) -> String { text.filter { !$0.isWhitespace } }
+
     var normalizedKeyword: String? {
         let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed

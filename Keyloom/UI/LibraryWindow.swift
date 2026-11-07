@@ -91,31 +91,19 @@ private struct LibrarySplitView: View {
         }
     }
 
-    /// One trailing cluster beside the search field, nothing floating mid-bar: what makes or orders the list (Sort,
-    /// New), then, once a snippet is saved, what acts on it (Pin, Duplicate, Delete; the row's pin state tells Pin
-    /// from Unpin). Save and Revert live in the editor's own action bar; the expansion status is a quiet line at the
+    /// Over the detail column: once a snippet is saved, what acts on it (Pin, Duplicate, Delete; the row's pin state
+    /// tells Pin from Unpin). Sort sits over the list column it orders (see `SnippetListView`); New leads this cluster. Save and Revert live in the editor's own action bar; the expansion status is a quiet line at the
     /// foot of the sidebar.
     @ToolbarContentBuilder
     private func trailingToolbar(editor: EditorViewModel?) -> some ToolbarContent {
         ToolbarSpacer(.flexible)
-        ToolbarItemGroup {
-            Menu {
-                Picker("Sort By", selection: $library.sort) {
-                    ForEach(LibrarySort.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.inline)
-            } label: {
-                Label("Sort", systemImage: "arrow.up.arrow.down")
-            }
-            .help("Choose how snippets are ordered")
-            .accessibilityIdentifier("library.sort")
+        ToolbarItem {
             Button("New Snippet", systemImage: "square.and.pencil") { Task { await model.requestNewSnippet() } }
                 .help("Create a snippet (Command-N)")
                 .accessibilityIdentifier("library.newSnippet")
         }
         if let editor, case .existing(let saved) = editor.target {
             let pinned = library.rows.first { $0.id == saved }?.pinned ?? false
-            ToolbarSpacer(.fixed)
             ToolbarItemGroup {
                 Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") {
                     Task { await library.togglePin(id: saved) }
@@ -153,6 +141,8 @@ struct LibraryCommands: Commands {
     let model: AppModel
 
     var body: some Commands {
+        SidebarCommands()
+        ToolbarCommands()
         CommandGroup(replacing: .newItem) {
             Button("New Snippet") { Task { await model.requestNewSnippet() } }
                 .keyboardShortcut("n")

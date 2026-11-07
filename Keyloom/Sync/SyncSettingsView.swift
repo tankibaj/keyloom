@@ -13,8 +13,9 @@ struct SyncSettingsView: View {
     var body: some View {
         Section {
             Toggle("Sync snippets through iCloud on this Mac", isOn: Binding(
-                get: { model.isEnabled },
+                get: { model.isEnabled && !model.presentation.isUnsupportedBuild },
                 set: { newValue in Task { await model.setEnabled(newValue) } }))
+            .disabled(model.presentation.isUnsupportedBuild)
             .accessibilityIdentifier("settings.sync.toggle")
             .task { await model.observe() }
 
