@@ -35,12 +35,21 @@ final class AppModel {
     /// Set by the window and app delegates: what "proceed" means once edits are saved or discarded.
     @ObservationIgnored var closeWindowAction: (@MainActor () -> Void)?
     @ObservationIgnored var quitAction: (@MainActor () -> Void)?
+    /// Daily, pre-import and pre-restore snapshots, and the folder where the store puts its pre-migration copies.
+    let snapshots: SnapshotManager
+    /// Why the last daily snapshot failed, for Settings. The library works regardless.
+    private(set) var snapshotError: String?
     @ObservationIgnored private let openLibrary: @MainActor (URL) async throws -> SnippetLibrary
+    @ObservationIgnored private var opening: Task<Void, Never>?
 
-    init(dataDirectory: URL = DataLocation.resolve(),
-         openLibrary: @escaping @MainActor (URL) async throws -> SnippetLibrary = { try await DataLocation.openLibrary(in: $0) }) {
+    /// `openLibrary` replaces the real database opener (tests).
+    init(dataDirectory: URL = DataLocation.resolve(), snapshots: SnapshotManager? = nil,
+         openLibrary: (@MainActor (URL) async throws -> SnippetLibrary)? = nil) {
         self.dataDirectory = dataDirectory
-        self.openLibrary = openLibrary
+        let manager = snapshots ?? SnapshotManager(directory: DataLocation.snapshotDirectory(in: dataDirectory), now: { Date() })
+        self.snapshots = manager
+        // The store's automatic pre-migration copies go beside the snapshots.
+        self.openLibrary = openLibrary ?? { try await DataLocation.openLibrary(in: $0, backupDirectory: manager.migrationBackupDirectory) }
     }
 
     var library: SnippetLibrary? {
@@ -51,9 +60,21 @@ final class AppModel {
         if case .ready(_, let model) = phase { model } else { nil }
     }
 
-    /// Opens the library and loads the list. Runs again after a failure (Try Again).
+    /// Opens the library and loads the list. Runs again after a failure (Try Again). Callers that overlap (the
+    /// environment at launch and the library window) share one open.
     func open() async {
         if library != nil { return }
+        if let opening {
+            await opening.value
+            return
+        }
+        let task = Task { await performOpen() }
+        opening = task
+        await task.value
+        opening = nil
+    }
+
+    private func performOpen() async {
         phase = .opening
         do {
             let library = try await openLibrary(dataDirectory)
@@ -61,8 +82,22 @@ final class AppModel {
             model.selectionRequest = { [weak self] id in await self?.requestSelection(id) }
             await model.refresh()
             phase = .ready(library, model)
+            await takeDailySnapshot(of: library)
         } catch {
             phase = .failed(UserMessage.describe(error))
+        }
+    }
+
+    /// At most one per day and only when the library changed (`SnapshotManager`). A failure is kept for Settings
+    /// and never blocks the library.
+    /// TODO(keyloom-wp4-snapshots): taken at launch and on "Back Up Now" only; a Mac that stays up for days misses
+    /// the day rollover, so schedule it (NSBackgroundActivityScheduler) when long-running sessions are profiled.
+    private func takeDailySnapshot(of library: SnippetLibrary) async {
+        do {
+            _ = try await library.takeDailySnapshot(using: snapshots)
+            snapshotError = nil
+        } catch {
+            snapshotError = UserMessage.describe(error)
         }
     }
 

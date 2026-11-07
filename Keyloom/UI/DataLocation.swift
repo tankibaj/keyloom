@@ -18,11 +18,12 @@ enum DataLocation {
     }
 
     static func databaseURL(in directory: URL) -> URL { directory.appendingPathComponent("keyloom.sqlite") }
-    static func backupDirectory(in directory: URL) -> URL { directory.appendingPathComponent("Backups", isDirectory: true) }
+    static func snapshotDirectory(in directory: URL) -> URL { directory.appendingPathComponent("Snapshots", isDirectory: true) }
 
-    /// Opens (creating the folder first) the library in `directory`.
-    static func openLibrary(in directory: URL) async throws -> SnippetLibrary {
+    /// Opens (creating the folder first) the library in `directory`. `backupDirectory` receives the store's
+    /// automatic pre-migration copies.
+    static func openLibrary(in directory: URL, backupDirectory: URL) async throws -> SnippetLibrary {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return try await SnippetLibrary(url: databaseURL(in: directory), backupDirectory: backupDirectory(in: directory))
+        return try await SnippetLibrary(url: databaseURL(in: directory), backupDirectory: backupDirectory)
     }
 }
