@@ -30,7 +30,9 @@ struct KeyloomApp: App {
                 ProgressView("Starting…").padding()
             }
         } label: {
-            Image(systemName: environment.services?.menuBar.symbolName ?? "text.cursor")
+            let needsAccessibility = environment.services.map { !$0.host.status.permissions.accessibility } ?? false
+            Image(needsAccessibility ? "MenuBarGlyphBadge" : "MenuBarGlyph")
+                .opacity(environment.services?.menuBar.isPaused == true ? 0.5 : 1)
                 .accessibilityLabel(AppIdentity.name)
                 .modifier(OpenLibraryAtLaunch())
         }
