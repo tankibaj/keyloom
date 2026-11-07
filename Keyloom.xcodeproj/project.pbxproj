@@ -405,7 +405,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.Keyloom;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thenaim.keyloom;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -417,7 +417,7 @@
 				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.Keyloom;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thenaim.keyloom;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
@@ -429,7 +429,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thenaim.keyloomTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Keyloom.app/Contents/MacOS/Keyloom";
 			};
@@ -442,7 +442,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thenaim.keyloomTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Keyloom.app/Contents/MacOS/Keyloom";
 			};
@@ -454,7 +454,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thenaim.keyloomUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				TEST_TARGET_NAME = Keyloom;
 			};
@@ -466,7 +466,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thenaim.keyloomUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				TEST_TARGET_NAME = Keyloom;
 			};
@@ -479,7 +479,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Keyloom Probe";
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomProbe;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thenaim.keyloomProbe;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};
@@ -492,7 +492,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Keyloom Probe";
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomProbe;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thenaim.keyloomProbe;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};
@@ -504,7 +504,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomProbeTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thenaim.keyloomProbeTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};
@@ -516,7 +516,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = app.keyloom.KeyloomProbeTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thenaim.keyloomProbeTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};

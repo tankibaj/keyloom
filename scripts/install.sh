@@ -5,7 +5,9 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-BUNDLE_ID="app.keyloom.Keyloom"
+BUNDLE_ID="com.thenaim.keyloom"
+# Earlier spellings of the bundle id; an install may still replace a build that used one of them.
+LEGACY_BUNDLE_IDS=("app.keyloom.Keyloom" "com.thenaim.Keyloom")
 DEST="${1:-${KEYLOOM_INSTALL_DIR:-/Applications}}"
 TARGET="$DEST/Keyloom.app"
 STAGE=""
@@ -49,13 +51,18 @@ if [[ -L "$TARGET" ]]; then
 elif [[ -e "$TARGET" ]]; then
   [[ -d "$TARGET" ]] || die "refusing to replace non-bundle: $TARGET"
   EXISTING="$(bundle_id "$TARGET")"
-  [[ "$EXISTING" == "$BUNDLE_ID" ]] || die "existing $TARGET has bundle id '${EXISTING:-none}', expected $BUNDLE_ID; not replacing"
+  [[ "$EXISTING" == "$BUNDLE_ID" || ${LEGACY_BUNDLE_IDS[(Ie)$EXISTING]} -gt 0 ]] || die "existing $TARGET has bundle id '${EXISTING:-none}', expected $BUNDLE_ID; not replacing"
 fi
 
 # Fresh sibling staging dir (same filesystem, so the moves below are renames)
 STAGE="$(mktemp -d "$DEST/.Keyloom-stage.XXXXXX")" || die "cannot create staging dir in $DEST"
 ditto "$BUILT" "$STAGE/Keyloom.app"
 [[ "$(bundle_id "$STAGE/Keyloom.app")" == "$BUNDLE_ID" ]] || die "staged copy failed identity check"
+
+# The build is ad-hoc signed, so its identity is a hash that changes every build and macOS drops the Accessibility
+# grant on each install. Pin the designated requirement to the bundle id so the grant survives rebuilds.
+codesign --force --sign - --preserve-metadata=entitlements,flags \
+  -r="designated => identifier \"$BUNDLE_ID\"" "$STAGE/Keyloom.app" >&2 || die "re-signing failed"
 
 # macOS mv has no atomic swap: move old aside, move new in, roll back on failure
 if [[ -e "$TARGET" ]]; then

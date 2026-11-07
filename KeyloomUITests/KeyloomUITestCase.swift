@@ -48,7 +48,7 @@ class KeyloomUITestCase: XCTestCase {
         app.launch()
         app.activate()
         // A second Keyloom (a unit-test host, a manual launch) makes XCUITest attach to the wrong process.
-        let instances = NSRunningApplication.runningApplications(withBundleIdentifier: "app.keyloom.Keyloom").count
+        let instances = NSRunningApplication.runningApplications(withBundleIdentifier: "com.thenaim.keyloom").count
         XCTAssertEqual(instances, 1, "exactly one Keyloom instance is running during the journey")
         if !app.windows["Keyloom"].waitForExistence(timeout: 5) {
             // APP DEFECT D2 (intermittent): the library window is not presented at launch; open it from the menu bar item.

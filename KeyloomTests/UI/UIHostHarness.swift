@@ -32,7 +32,7 @@ extension LibraryUITestCase {
         let dependencies = HostDependencies(
             destination: destination, pasteboard: pasteboard, keys: FakePasteKeys(), permissions: permissions,
             environment: environment, workspace: FakeWorkspace(), hotKeys: hotKeys, makeTap: { _ in tap },
-            settle: { _ in }, ownBundleID: "app.keyloom.Keyloom", permissionPollInterval: nil)
+            settle: { _ in }, ownBundleID: "com.thenaim.keyloom", permissionPollInterval: nil)
         let controller = InputHostController(library: library, prompter: prompter, picker: picker, preferences: preferences,
                                              dependencies: dependencies)
         return UIHostHarness(controller: controller, destination: destination, pasteboard: pasteboard,
