@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -45,6 +46,8 @@ final class AppModel {
     @ObservationIgnored private var opening: Task<Void, Never>?
     @ObservationIgnored private var changeObserver: Task<Void, Never>?
     @ObservationIgnored private var writingToolsPolicy: WritingAssistancePolicy?
+    @ObservationIgnored private var assistanceService: AssistanceService?
+    @ObservationIgnored private var activationObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var dayChangeObservers: [any NSObjectProtocol] = []
     /// The newest snapshot started by a day change, for tests to await.
     @ObservationIgnored private(set) var pendingSnapshot: Task<Void, Never>?
@@ -122,17 +125,27 @@ final class AppModel {
         }
     }
 
-    /// The editor body is the one prose field. Writing Tools follow the assistance policy, now and on every
-    /// change (a managed profile can switch them off while an editor is open).
-    func bindWritingTools(to policy: WritingAssistancePolicy) {
+    /// The editor body is the one prose field. Writing Tools and the assistance action follow the policy, now and
+    /// on every change: a managed profile can arrive while an editor is open, so the policy is also re-read
+    /// whenever the app becomes active (not only when Settings is opened).
+    func bindWritingTools(to policy: WritingAssistancePolicy, assistance: AssistanceService? = nil,
+                          center: NotificationCenter = .default) {
         writingToolsPolicy = policy
+        assistanceService = assistance
         policy.observeChanges { [weak self] _ in self?.applyWritingTools() }
+        activationObserver = center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { policy.refresh() }
+        }
         applyWritingTools()
     }
 
     private func applyWritingTools() {
-        guard let policy = writingToolsPolicy else { return }
-        editor?.bodyController.writingToolsBehavior = policy.snapshot.writingToolsBehavior(forProseField: true)
+        guard let policy = writingToolsPolicy, let editor else { return }
+        editor.bodyController.writingToolsBehavior = policy.snapshot.writingToolsBehavior(forProseField: true)
+        if let assistanceService {
+            if editor.assistance == nil { editor.assistance = AssistanceEditorModel(editor: editor, service: assistanceService, policy: policy) }
+            editor.assistance?.policyChanged()
+        }
     }
 
     /// Takes a daily snapshot again when the day rolls over or the clock or time zone jumps, so a Mac that stays

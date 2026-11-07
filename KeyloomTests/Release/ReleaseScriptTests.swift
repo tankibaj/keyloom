@@ -229,4 +229,13 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertTrue(result.out.contains("Overall: PASS"), result.out)
         XCTAssertTrue(result.out.contains("GitHub release: NOT VERIFIED"), "publication is a manual, separate item")
     }
+
+    /// The shipped binary must not carry the test-only symbols that `@testable` needs; tests keep testability in
+    /// their own build configuration.
+    func testTheArchiveStepTurnsTestabilityOff() throws {
+        let script = try String(contentsOf: repoRoot.appendingPathComponent("scripts/release/release.sh"), encoding: .utf8)
+        let start = try XCTUnwrap(script.range(of: "xcodebuild archive"))
+        let archiveCommand = script[start.lowerBound...].prefix { $0 != ">" }
+        XCTAssertTrue(archiveCommand.contains("ENABLE_TESTABILITY=NO"), String(archiveCommand))
+    }
 }

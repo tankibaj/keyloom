@@ -60,9 +60,14 @@ final class EditorViewModel {
     let library: SnippetLibrary
     let bodyController = RichTextController()
     private(set) var target: Target
-    var draft: SnippetDraft
+    var draft: SnippetDraft {
+        didSet { if draft.body != oldValue.body { bodyRevision += 1 } }
+    }
     private(set) var baseline: SnippetDraft
     var errorMessage: String?
+    private(set) var bodyRevision = 0
+    /// The on-device assistance action for this editor; nil until the app wires the service in.
+    var assistance: AssistanceEditorModel?
     private(set) var keywordFeedback = KeywordFeedback()
     /// Try Expansion: values the user typed for arguments; the rest fall back to default, first choice, then a stand-in.
     var sampleArguments: [String: String] = [:]

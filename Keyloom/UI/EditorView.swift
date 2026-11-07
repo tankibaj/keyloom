@@ -23,6 +23,10 @@ struct EditorView: View {
             if let message { AccessibilityNotification.Announcement(message).post() }
         }
         .sheet(isPresented: $showingArgument) { argumentSheet }
+        .sheet(isPresented: Binding(get: { editor.assistance.map { $0.state != .idle } ?? false },
+                                    set: { if !$0 { editor.assistance?.cancel() } })) {
+            if let assistance = editor.assistance { AssistanceSheet(assistance: assistance) }
+        }
     }
 
     private var header: some View {
@@ -103,6 +107,7 @@ struct EditorView: View {
                 Label("Insert Placeholder", systemImage: "curlybraces")
             }
             .fixedSize()
+            if let assistance = editor.assistance, assistance.isOffered { AssistanceMenu(assistance: assistance) }
         }
     }
 

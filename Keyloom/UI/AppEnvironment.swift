@@ -68,7 +68,11 @@ final class AppEnvironment {
         let adapter: any SyncEngineAdapter = syncAdapter ?? (mode == .live ? CKSyncEngineAdapter() : InertSyncAdapter())
         let sync = SyncController(store: library.syncStore, adapter: adapter, preference: syncPreference,
                                   onLibraryChanged: { await library.reloadAfterSync() })
-        let assistancePolicy = WritingAssistancePolicy(defaults: defaults)
+        let assistancePolicy = mode == .live
+            ? WritingAssistancePolicy(defaults: defaults)
+            : WritingAssistancePolicy(defaults: defaults, availability: InertModelAvailability())
+        let assistance = AssistanceService.make(policy: assistancePolicy,
+                                                sessions: mode == .live ? SystemModelSessionFactory() : EchoModelSessionFactory())
         let settings = SettingsModels(
             appearance: AppearanceSettings(defaults: defaults), shortcut: ShortcutSettingsModel(host: host),
             expansion: ExpansionSettingsModel(host: host),
@@ -76,7 +80,7 @@ final class AppEnvironment {
             sync: SyncSettingsViewModel(controller: sync, preference: syncPreference),
             assistance: WritingAssistanceSettingsModel(policy: assistancePolicy))
         settings.appearance.applyCurrent()
-        model.bindWritingTools(to: assistancePolicy)
+        model.bindWritingTools(to: assistancePolicy, assistance: assistance)
         model.observeDayChanges()
         services = Services(host: host, picker: picker, menuBar: MenuBarModel(library: library, host: host, picker: picker),
                             settings: settings, sync: sync)
