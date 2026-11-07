@@ -113,6 +113,30 @@ final class ExpansionFlowTests: StoreTestCase {
         XCTAssertEqual(pasteboard.writeCount, 0, "Copy is offered, never done on its own")
     }
 
+    func testWriteIgnoredByTheAppOffersCopyAndRecordsNoUsage() async throws {
+        try await setUpFlow(typed: ";sig")
+        let snippet = try await addSnippet(";sig", "Best")
+        destination.ignoresReplace = true
+        let result = await coordinator.handle(match(";sig"))
+        XCTAssertEqual(result.outcome, .aborted(.writeUnconfirmed))
+        XCTAssertEqual(result.copyOffer?.plainText, "Best")
+        XCTAssertFalse(result.usageRecordFailed)
+        let used = await usage(snippet.id)
+        XCTAssertNil(used)
+        XCTAssertEqual(pasteboard.writeCount, 0)
+    }
+
+    func testAppAddedToTheExclusionListWhileThePromptWasOpenIsNotWrittenTo() async throws {
+        try await setUpFlow(typed: ";fu")
+        try await addSnippet(";fu", followUp)
+        prompter.answers = ["recipient": "Zoë"]
+        prompter.onPrompt = { [unowned self] in excluded = ["com.apple.TextEdit"] }
+        let result = await coordinator.handle(match(";fu"))
+        XCTAssertEqual(result.outcome, .failedClosed(.appExcluded))
+        XCTAssertNil(result.copyOffer)
+        XCTAssertEqual(destination.writes, [])
+    }
+
     func testFocusNotReturnedAfterThePromptAborts() async throws {
         try await setUpFlow(typed: ";fu")
         try await addSnippet(";fu", followUp)

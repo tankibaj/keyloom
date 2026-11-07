@@ -43,6 +43,9 @@ protocol DestinationAccess: AnyObject {
     /// on whatever is focused later.
     func replace(range: NSRange, with text: String, bound: FieldSnapshot) -> WriteResult
     func select(_ range: NSRange, bound: FieldSnapshot) -> WriteResult
+    /// Undoes a selection this app set: moves the caret to `caret` only while `token`'s field still selects
+    /// exactly `selected`, whatever its text says now. Anything else is `.destinationChanged`, nothing written.
+    func restoreSelection(_ caret: NSRange, ifSelected selected: NSRange, in token: FocusToken) -> WriteResult
 }
 
 /// Maps live elements to small stable ids, so focus returning to an earlier element yields the same token

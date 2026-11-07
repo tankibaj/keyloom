@@ -101,6 +101,8 @@ final class InputHostController {
     @ObservationIgnored private var pollTimer: Timer?
     @ObservationIgnored private var removeActivationObserver: (() -> Void)?
     @ObservationIgnored private var isStarted = false
+    /// Typed expansions and picker insertions in flight; keys are dropped while any is.
+    @ObservationIgnored private var suspensions = 0
 
     init(library: SnippetLibrary, prompter: ArgumentPrompting, picker: PickerPresenting, preferences: PreferencesStoring,
          dependencies: HostDependencies = .system()) {
@@ -195,6 +197,7 @@ final class InputHostController {
     /// Keyloom's own windows are always excluded in addition to these.
     func setExcludedBundleIDs(_ ids: Set<String>) {
         userExcluded = ids
+        cancelExpansion()
         inputHost.excludedBundleIDs = ids.union(dependencies.ownBundleID.map { [$0] } ?? [])
         var saved = preferences.load()
         saved.excludedBundleIDs = ids
@@ -232,11 +235,8 @@ final class InputHostController {
     @discardableResult
     func insert(_ rendered: RenderedSnippet, into destination: CapturedDestination, route: InsertionRoute,
                 snippetID: UUID?) async -> InsertionOutcome {
-        inputHost.isSuspended = true
-        defer {
-            inputHost.isSuspended = false
-            inputHost.invalidate()
-        }
+        suspend()
+        defer { resume() }
         let outcome = await engine.insert(rendered, into: destination.target, route: route, reactivating: true)
         publish(await coordinator.finish(outcome, rendered: rendered, snippetID: snippetID))
         return outcome
@@ -261,8 +261,19 @@ final class InputHostController {
 
     // MARK: Typed expansion
 
-    private func begin(_ match: KeywordMatch) {
+    private func suspend() {
+        suspensions += 1
         inputHost.isSuspended = true
+    }
+
+    private func resume() {
+        suspensions -= 1
+        inputHost.isSuspended = suspensions > 0
+        inputHost.invalidate()
+    }
+
+    private func begin(_ match: KeywordMatch) {
+        suspend()
         expansionTask = Task { [weak self] in
             guard let self else { return }
             await process(match)
@@ -271,8 +282,7 @@ final class InputHostController {
 
     private func process(_ match: KeywordMatch) async {
         defer {
-            inputHost.isSuspended = false
-            inputHost.invalidate()
+            resume()
             expansionTask = nil
         }
         publish(await coordinator.handle(match))

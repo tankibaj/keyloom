@@ -60,7 +60,27 @@ final class TargetBindingTests: XCTestCase {
         }
         let target = try await binder.bindKeyword(match()).get()
         XCTAssertEqual(target.range, NSRange(location: 6, length: 3))
-        XCTAssertEqual(settles, 2)
+        XCTAssertEqual(settles, 3, "two consecutive identical reads are required after the app applied the key")
+    }
+
+    /// The user's own ";" sits before the caret and they type ";;". At the first read the app has applied only the
+    /// first typed key, so ";;" (the user's ";" plus one typed) looks like the keyword one character too early.
+    func testPrefixShiftedMatchBeforeTheLastKeyIsAppliedIsNeverBound() async throws {
+        make(prefix: "a ", typed: ";;", suffix: " tail")
+        destination.pendingKeys = [";"]
+        onSettle = { [unowned self] in destination.applyNextKey() }
+        let target = try await binder.bindKeyword(match(";;")).get()
+        XCTAssertEqual(destination.text, "a ;;; tail")
+        XCTAssertEqual(target.range, NSRange(location: 3, length: 2), "the user's own semicolon is not part of the range")
+        XCTAssertEqual(target.snapshot.text, "a ;;; tail")
+    }
+
+    func testKeyAppliedTwoSettlesLateIsStillWaitedFor() async throws {
+        make(prefix: "a ", typed: ";;", suffix: " tail")
+        destination.pendingKeys = [";"]
+        onSettle = { [unowned self] in if settles == 2 { destination.applyNextKey() } }
+        let target = try await binder.bindKeyword(match(";;")).get()
+        XCTAssertEqual(target.range, NSRange(location: 3, length: 2))
     }
 
     func testKeywordNeverAppearingFailsClosedAfterBoundedWaits() async {

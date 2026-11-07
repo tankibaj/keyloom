@@ -148,6 +148,39 @@ final class InsertionTests: InsertionTestCase {
         XCTAssertEqual(outcome, .replaced(mode: .plain, verified: false, clipboard: .notTouched))
     }
 
+    /// Accessibility selects first and writes second. If the field changes in between, our selection must not stay behind.
+    func testFailedVerificationAfterSelectingPutsTheCaretBack() async throws {
+        make()
+        let target = try await bound()
+        destination.afterSelectionSet = { [unowned self] in destination.text = (destination.text ?? "") + "!" }
+        let outcome = await engine.insert(rendered("Hi"), into: target, route: .plain, reactivating: false)
+        XCTAssertEqual(outcome, .aborted(.destinationChanged))
+        XCTAssertEqual(destination.text, "Dear ;kl tail!")
+        XCTAssertEqual(destination.selection, NSRange(location: 8, length: 0), "no selected keyword left for the next keystroke to replace")
+    }
+
+    func testCaretTheUserMovedMeanwhileIsNotMovedBack() async throws {
+        make()
+        let target = try await bound()
+        destination.afterSelectionSet = { [unowned self] in destination.selection = NSRange(location: 0, length: 0) }
+        let outcome = await engine.insert(rendered("Hi"), into: target, route: .plain, reactivating: false)
+        XCTAssertEqual(outcome, .aborted(.destinationChanged))
+        XCTAssertEqual(destination.selection, NSRange(location: 0, length: 0))
+    }
+
+    /// Electron and terminals accept the Accessibility write and ignore it: not an insertion, so Copy is offered.
+    func testWriteTheAppIgnoredIsNotReportedAsInserted() async throws {
+        make()
+        let target = try await bound()
+        destination.ignoresReplace = true
+        let outcome = await engine.insert(rendered("Hi", cursor: 1), into: target, route: .plain, reactivating: false)
+        XCTAssertEqual(outcome, .aborted(.writeUnconfirmed))
+        XCTAssertTrue(outcome.allowsCopyOffer)
+        XCTAssertEqual(destination.text, "Dear ;kl tail")
+        XCTAssertEqual(destination.selection, NSRange(location: 8, length: 0))
+        XCTAssertEqual(pasteboard.writeCount, 0)
+    }
+
     func testStyledSnippetInsertsItsPlainTextOnTheAutomaticRoute() async throws {
         make()
         let target = try await bound()

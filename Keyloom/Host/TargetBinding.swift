@@ -12,6 +12,9 @@ enum UnsafeReason: String, Equatable, Sendable {
 /// Why a started insertion stopped. In every case the destination text was left as it was.
 enum AbortReason: String, Equatable, Sendable {
     case destinationChanged, destinationNotReactivated, writeFailed, cancelled
+    /// The app took the write but the field does not read back as written (Electron and terminals can ignore
+    /// Accessibility writes). The text may or may not have changed, so Copy is offered and nothing is counted as inserted.
+    case writeUnconfirmed
 }
 
 enum Refusal: Error, Equatable, Sendable {
@@ -50,17 +53,26 @@ final class TargetBinder {
         self.settle = settle
     }
 
-    /// Binds the keyword just typed before the caret, waiting a bounded time for the app to show it.
+    /// Binds the keyword just typed before the caret. The tap sees a key before the app applies it, so a read
+    /// taken at once can show the keyword one character early (a user's own ";" plus one typed ";" looks like
+    /// ";;"), and replacing that range would delete text the user wrote. Every read therefore follows a settle,
+    /// and the range is bound only once two consecutive reads agree exactly. Gives up, failing closed, after
+    /// `maxSettleAttempts`.
     func bindKeyword(_ match: KeywordMatch) async -> Result<BoundTarget, Refusal> {
-        var attempts = 0
-        while true {
-            let result = locateKeyword(match)
-            guard case .failure(.failedClosed(.keywordNotBeforeCaret)) = result, attempts < Self.maxSettleAttempts else {
-                return result
-            }
-            attempts += 1
+        var previous: BoundTarget?
+        for _ in 0..<Self.maxSettleAttempts {
             await settle(Self.settleInterval)
+            switch locateKeyword(match) {
+            case .success(let target):
+                if target == previous { return .success(target) }
+                previous = target
+            case .failure(.failedClosed(.keywordNotBeforeCaret)):
+                previous = nil
+            case .failure(let refusal):
+                return .failure(refusal)
+            }
         }
+        return .failure(.failedClosed(.keywordNotBeforeCaret))
     }
 
     /// Best effort after the user cancelled Keyloom's own prompt: hand focus back to where they were typing.
@@ -82,12 +94,18 @@ final class TargetBinder {
     /// prompt took focus: it brings the original app back first, and only then compares, so Keyloom's own focus
     /// transfer is never mistaken for a user change while a real change still aborts.
     func revalidate(_ target: BoundTarget, reactivating: Bool) async -> Refusal? {
-        if let refusal = guardrails() { return refusal }
+        if let refusal = guardrails() ?? exclusionRefusal(target) { return refusal }
         if reactivating, await !destination.activate(target.snapshot.token) {
             return .aborted(.destinationNotReactivated)
         }
-        if let refusal = guardrails() { return refusal }
+        // The user can change permissions, secure input or the exclusion list while a prompt is open.
+        if let refusal = guardrails() ?? exclusionRefusal(target) { return refusal }
         guard destination.snapshot()?.satisfies(target.snapshot) == true else { return .aborted(.destinationChanged) }
+        return nil
+    }
+
+    private func exclusionRefusal(_ target: BoundTarget) -> Refusal? {
+        guard let bundleID = target.snapshot.bundleID, !excludedBundleIDs().contains(bundleID) else { return .failedClosed(.appExcluded) }
         return nil
     }
 

@@ -107,10 +107,18 @@ final class InsertionEngine {
         guard !Task.isCancelled else { return .aborted(.cancelled) }
         switch destination.replace(range: target.range, with: rendered.plainText, bound: target.snapshot) {
         case .written: break
-        case .destinationChanged: return .aborted(.destinationChanged)
+        case .destinationChanged:
+            // The write selects before it verifies: do not leave our selection behind.
+            restoreCaret(of: target)
+            return .aborted(.destinationChanged)
         case .failed:
             restoreCaret(of: target)
             return .aborted(.writeFailed)
+        }
+        // Some apps (Electron, terminals) report success and ignore the write: read it back before counting it.
+        guard destination.snapshot()?.text == Self.expectedText(after: rendered, in: target) else {
+            restoreCaret(of: target)
+            return .aborted(.writeUnconfirmed)
         }
         return .replaced(mode: .plain, verified: placeCaret(rendered, in: target), clipboard: .notTouched)
     }
@@ -118,9 +126,15 @@ final class InsertionEngine {
     // MARK: Rich (explicit paste route)
 
     private func pasteRich(_ rendered: RenderedSnippet, into target: BoundTarget, reactivating: Bool) async -> InsertionOutcome {
-        guard permissions.current().postEvents, let saved = pasteboard.snapshot() else { return .failedClosed(.richUnsupported) }
+        guard permissions.current().postEvents else { return .failedClosed(.richUnsupported) }
         if let refusal = await binder.revalidate(target, reactivating: reactivating) { return .init(refusal) }
         guard !Task.isCancelled else { return .aborted(.cancelled) }
+        // Snapshot only now, after every await: a copy made while we waited is the user's clipboard to restore,
+        // and one made since is a reason to stop. Not preservable (secret, promised or oversize) also stops here.
+        let countAtSnapshot = pasteboard.changeCount
+        guard let saved = pasteboard.snapshot(), pasteboard.changeCount == countAtSnapshot else {
+            return .failedClosed(.richUnsupported)
+        }
         var armed = target.snapshot
         if target.range.length > 0 {
             armed.selection = target.range
@@ -130,6 +144,10 @@ final class InsertionEngine {
                 restoreCaret(of: target)
                 return .aborted(.destinationChanged)
             }
+        }
+        guard pasteboard.changeCount == countAtSnapshot else {
+            restoreCaret(of: target)
+            return .failedClosed(.richUnsupported)
         }
         let ours = pasteboard.write(plain: rendered.plainText, rtf: rendered.rtfData())
         // The last instant before the keystroke: still the same field, same selection, nothing revoked.
@@ -143,7 +161,7 @@ final class InsertionEngine {
             restoreCaret(of: target)
             return .aborted(.writeFailed)
         }
-        let expected = ((target.snapshot.text ?? "") as NSString).replacingCharacters(in: target.range, with: rendered.plainText)
+        let expected = Self.expectedText(after: rendered, in: target)
         var landed = false
         for _ in 0..<TargetBinder.maxSettleAttempts {
             await settle(TargetBinder.settleInterval)
@@ -154,7 +172,7 @@ final class InsertionEngine {
         }
         guard landed else {
             onClipboardOutcome?(.restoreSkippedPasteUnconfirmed)
-            return .replaced(mode: .richPaste, verified: false, clipboard: .restoreSkippedPasteUnconfirmed)
+            return .aborted(.writeUnconfirmed)
         }
         let clipboard = giveBack(saved, ours)
         return .replaced(mode: .richPaste, verified: placeCaret(rendered, in: target), clipboard: clipboard)
@@ -179,6 +197,10 @@ final class InsertionEngine {
 
     // MARK: Shared
 
+    private static func expectedText(after rendered: RenderedSnippet, in target: BoundTarget) -> String {
+        ((target.snapshot.text ?? "") as NSString).replacingCharacters(in: target.range, with: rendered.plainText)
+    }
+
     /// After a successful write: caret at the cursor marker (UTF-16), then read the result back.
     private func placeCaret(_ rendered: RenderedSnippet, in target: BoundTarget) -> Bool {
         var written = target.snapshot
@@ -194,12 +216,11 @@ final class InsertionEngine {
         return after?.text == written.text && (caret == nil || after?.selection == caret)
     }
 
-    /// Undoes our own keyword selection, and only while the field is still exactly as we left it: a caret the
-    /// user moved meanwhile is theirs.
+    /// Undoes our own keyword selection, and only while the field still selects exactly that range: a caret the
+    /// user moved meanwhile is theirs. The text may have changed since (that is often why we are here), so the
+    /// destination checks the selection and the field identity, not the contents.
     private func restoreCaret(of target: BoundTarget) {
         guard target.range.length > 0, let original = target.snapshot.selection else { return }
-        var selected = target.snapshot
-        selected.selection = target.range
-        _ = destination.select(original, bound: selected)
+        _ = destination.restoreSelection(original, ifSelected: target.range, in: target.snapshot.token)
     }
 }

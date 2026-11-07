@@ -38,10 +38,40 @@ final class ClipboardOwnershipTests: InsertionTestCase {
 
     func testPasteThatNeverLandsLeavesOurSnippetOnTheClipboardSoALatePasteCannotInsertTheOldOne() async throws {
         make()
-        let outcome = try await pasteRich()
-        XCTAssertEqual(outcome, .replaced(mode: .richPaste, verified: false, clipboard: .restoreSkippedPasteUnconfirmed))
+        var clipboardOutcomes: [ClipboardOutcome] = []
+        engine.onClipboardOutcome = { clipboardOutcomes.append($0) }
+        let target = try await bound()
+        settles = 0
+        let outcome = await engine.insert(rendered(snippet, boldRange: 6..<9), into: target, route: .richPaste, reactivating: false)
+        XCTAssertEqual(outcome, .aborted(.writeUnconfirmed))
+        XCTAssertTrue(outcome.allowsCopyOffer)
+        XCTAssertEqual(clipboardOutcomes, [.restoreSkippedPasteUnconfirmed])
         XCTAssertEqual(pasteboard.plain, snippet)
         XCTAssertEqual(settles, TargetBinder.maxSettleAttempts)
+    }
+
+    func testClipboardCopiedWhileWaitingForTheAppToComeBackIsRestoredNotOverwritten() async throws {
+        make()
+        pasteLands()
+        let target = try await bound()
+        destination.onActivate = { [unowned self] _ in pasteboard.otherAppCopies("newer clipboard") }
+        let outcome = await engine.insert(rendered(snippet), into: target, route: .richPaste, reactivating: true)
+        XCTAssertEqual(outcome, .replaced(mode: .richPaste, verified: true, clipboard: .restored))
+        XCTAssertEqual(pasteboard.plain, "newer clipboard", "the snapshot is taken after the await, so the newer copy is what comes back")
+    }
+
+    func testClipboardChangedBetweenSnapshotAndWriteRefusesAndWritesNothing() async throws {
+        make()
+        pasteLands()
+        pasteboard.onSnapshot = { [unowned self] in pasteboard.otherAppCopies("newer clipboard") }
+        let outcome = try await pasteRich()
+        XCTAssertEqual(outcome, .failedClosed(.richUnsupported))
+        XCTAssertTrue(outcome.allowsCopyOffer)
+        XCTAssertEqual(pasteboard.plain, "newer clipboard")
+        XCTAssertEqual(pasteboard.writeCount, 0)
+        XCTAssertEqual(keys.postCount, 0)
+        XCTAssertEqual(destination.text, "Dear ;kl tail")
+        XCTAssertEqual(destination.selection, NSRange(location: 8, length: 0))
     }
 
     func testDestinationChangedAfterTheClipboardWriteSendsNoKeystrokeAndRestores() async throws {

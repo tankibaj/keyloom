@@ -120,6 +120,49 @@ final class InputHostControllerTests: StoreTestCase {
         XCTAssertEqual(destination.text, "Dear ;sig tail")
     }
 
+    private func startHeldPrompt() async throws {
+        _ = try await library.create(name: "fu", icon: .emoji("x"), keyword: ";fu", enabled: true, tags: [],
+                                     template: try TokenParser.parse("Hi {argument name=\"who\"}").document)
+        prompter.holds = true
+        prompter.answers = ["who": "Zoë"]
+        controller.start()
+        type(";fu")
+        while prompter.requests.isEmpty { await Task.yield() }
+    }
+
+    func testPauseWhileThePromptIsOpenCancelsTheExpansionWithoutWriting() async throws {
+        try await setUpController(typed: ";fu")
+        try await startHeldPrompt()
+        controller.setPaused(true)
+        prompter.release()
+        await controller.expansionTask?.value
+        XCTAssertEqual(controller.status.lastOutcome, .aborted(.cancelled))
+        XCTAssertEqual(destination.writes, [])
+    }
+
+    func testExcludingTheAppWhileThePromptIsOpenStopsTheExpansion() async throws {
+        try await setUpController(typed: ";fu")
+        try await startHeldPrompt()
+        controller.setExcludedBundleIDs(["com.apple.TextEdit"])
+        prompter.release()
+        await controller.expansionTask?.value
+        XCTAssertEqual(controller.status.lastOutcome, .failedClosed(.appExcluded))
+        XCTAssertEqual(destination.writes, [])
+    }
+
+    func testPickerInsertDoesNotEndTheSuspensionOfATypedExpansionInFlight() async throws {
+        try await setUpController(typed: ";fu")
+        try await startHeldPrompt()
+        controller.openPicker()
+        let captured = try XCTUnwrap(try XCTUnwrap(picker.presented.first))
+        let rendered = RenderedSnippet(segments: [StyledSegment(text: "Hi", style: [])], plainText: "Hi", cursorOffset: nil)
+        _ = await controller.insert(rendered, into: captured, route: .plain, snippetID: nil)
+        XCTAssertTrue(controller.inputHost.isSuspended, "keys typed during the prompt must still be dropped")
+        prompter.release()
+        await controller.expansionTask?.value
+        XCTAssertFalse(controller.inputHost.isSuspended)
+    }
+
     // MARK: Picker
 
     func testPickerCapturesTheDestinationBeforeAnyUIAndInsertsAfterFocusReturns() async throws {
