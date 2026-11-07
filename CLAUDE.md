@@ -36,3 +36,9 @@ All OS boundaries (permissions, workspace, AX, pasteboard, key posting, tap, hot
 - Typed text, snippet text and clipboard contents must never be logged, stored in errors or counters.
 - Unit tests cover the typing route with fakes only; behavior in real apps (browsers, Electron, terminals) must be checked by hand against the installed build.
 - Tests must not touch the real clipboard (use a named `NSPasteboard`) or install a real tap/hotkey (`AppEnvironment` picks inert dependencies under XCTest).
+
+## UI conventions
+
+- The UI follows the redesign mocks (menu-bar popover, Settings, library window, editor) and an Apple-Shortcuts-calm look: few toolbar controls over the column they act on (Sort over the list; New/Pin/Duplicate/Delete over the editor), status as a quiet dot + caption (never a toolbar chip), in-pane action bar for Edited/Revert/Save, small gray sidebar icons, symbol-and-color icon picker only (no emoji; old emoji icons fall back to a symbol). Tag colors are device-local (`app.keyloom.tagColors`) and do not sync.
+- Library minimum width is 1020 (the toolbar must not fall into the » overflow); Settings is resizable (default ~720x560, min 640x480). Check changes by screenshot at min, ~1100x700 and full screen, light and dark (`LibraryWindowMetrics`).
+- App icon: `Icon/AppIcon.icon` via `tools/make_icon.sh` / `tools/icon_review.sh`; `Icon/` is gitignored globally on some machines, so `git add -f` it if needed. After installing, a stale Dock icon needs `lsregister -f` + `killall Dock`.

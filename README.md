@@ -6,6 +6,15 @@ A macOS menu-bar text expander. Type a keyword such as `::sig` in any app and Ke
 - **One permission:** Accessibility. No Input Monitoring, no Post Events.
 - **Bundle id** `com.thenaim.keyloom`.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/library-light.png" alt="Keyloom library window, light" width="49%">
+  <img src="docs/images/library-dark.png" alt="Keyloom library window, dark" width="49%">
+</p>
+
+The library window: tags and status in the sidebar, snippet rows with keyword chips and one-line previews, and an editor with token pills, a live "Expands to" preview, keyword-conflict check and usage line. A menu-bar popover gives quick insert, pause and a permission banner; Settings has General, Expansion, Sync and Assistance.
+
 ## Snippets
 
 Templates support these tokens:
@@ -129,3 +138,7 @@ The Accessibility route verifies every step and fails closed. The typing route c
 ## Status
 
 iCloud sync needs a build signed with a CloudKit entitlement and a provisioned container; builds made with `scripts/install.sh` report "not signed for iCloud". The typing route is covered by unit tests with fakes; behavior in particular apps (browsers, Electron, terminals) has to be checked by hand.
+
+## App icon
+
+The icon is an Icon Composer file, `Icon/AppIcon.icon` ("Weave", all looks: default, dark, tinted, clear). `tools/make_icon.sh` compiles it with `actool` into `Resources/` (review only; the Xcode build bundles it), and `tools/icon_review.sh` renders a contact sheet of every look. The menu-bar glyph is a template image with a badge variant when Accessibility is missing.
