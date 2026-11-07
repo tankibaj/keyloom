@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// A committed change to the library, published by `SnippetLibrary.changes` after the derived state
 /// (matcher index, search index, snapshot) already reflects it. Payloads are IDs only: no snippet text.
@@ -39,4 +40,44 @@ enum ExpansionOutcome: Equatable, Sendable {
     /// Arguments with no answer yet, in order of first appearance; defaults and choices prefill the prompt.
     case needsArguments([ArgumentRequirement])
     case rendered(RenderedSnippet)
+}
+
+/// Fans committed changes out to any number of subscribers. Each subscriber's stream is independent: ending
+/// one (its task was cancelled) removes only that one.
+final class ChangeBroadcaster: Sendable {
+    private struct State {
+        var subscribers: [UUID: AsyncStream<LibraryChange>.Continuation] = [:]
+        var isFinished = false
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    func stream() -> AsyncStream<LibraryChange> {
+        let (stream, continuation) = AsyncStream.makeStream(of: LibraryChange.self)
+        let id = UUID()
+        let finished = state.withLock { state -> Bool in
+            if !state.isFinished { state.subscribers[id] = continuation }
+            return state.isFinished
+        }
+        if finished {
+            continuation.finish()
+        } else {
+            continuation.onTermination = { [weak self] _ in self?.state.withLock { $0.subscribers[id] = nil } }
+        }
+        return stream
+    }
+
+    func yield(_ change: LibraryChange) {
+        let subscribers = state.withLock { Array($0.subscribers.values) }
+        for subscriber in subscribers { subscriber.yield(change) }
+    }
+
+    func finish() {
+        let subscribers = state.withLock { state -> [AsyncStream<LibraryChange>.Continuation] in
+            state.isFinished = true
+            defer { state.subscribers = [:] }
+            return Array(state.subscribers.values)
+        }
+        for subscriber in subscribers { subscriber.finish() }
+    }
 }

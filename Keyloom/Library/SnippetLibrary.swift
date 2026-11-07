@@ -15,17 +15,20 @@ import Foundation
 ///   stored snippet, so they do not overwrite other fields a concurrent `update` saved before them.
 /// - Typed text, clipboard values and arguments pass through `expansion` and `preview` only: they are never
 ///   stored, logged or put into a `LibraryChange` or an error.
-/// - `changes` is single-consumer: iterate it from one task. It finishes when `close()` is called.
+/// - `changes` hands every caller its own stream, so the library window, the editor refresh and the sync trigger
+///   can each subscribe, and a cancelled subscriber (a closed window) never affects the others. A stream sees
+///   changes committed after it was requested, and finishes when `close()` is called (at once if already closed).
 actor SnippetLibrary {
     /// Nonisolated so the keyboard side can feed it directly.
     nonisolated let keywordMatcher: KeywordMatcher
-    nonisolated let changes: AsyncStream<LibraryChange>
+    /// A fresh stream of committed changes for this subscriber; see the type's notes.
+    nonisolated var changes: AsyncStream<LibraryChange> { broadcaster.stream() }
 
     let store: SnippetStore
     private let keywordIndexStore = KeywordIndexStore()
     let now: @Sendable () -> Date
     let makeID: @Sendable () -> UUID
-    let changeContinuation: AsyncStream<LibraryChange>.Continuation
+    let broadcaster = ChangeBroadcaster()
     private var snapshot: [Snippet] = []
     private var unreadable: [UnreadableRecord] = []
     private var searchIndex = SearchIndex(snippets: [])
@@ -40,7 +43,6 @@ actor SnippetLibrary {
         self.now = now
         self.makeID = makeID
         keywordMatcher = KeywordMatcher(store: keywordIndexStore)
-        (changes, changeContinuation) = AsyncStream.makeStream(of: LibraryChange.self)
         try await reload()
     }
 
@@ -52,7 +54,6 @@ actor SnippetLibrary {
         now = store.now
         makeID = store.makeID
         keywordMatcher = KeywordMatcher(store: keywordIndexStore)
-        (changes, changeContinuation) = AsyncStream.makeStream(of: LibraryChange.self)
         try await reload()
     }
 
@@ -63,13 +64,13 @@ actor SnippetLibrary {
     /// indexes and tell observers. A failed reload leaves the previous snapshot; the next change retries.
     func reloadAfterSync() async {
         guard (try? await reload()) != nil else { return }
-        changeContinuation.yield(.remoteChangesApplied)
+        broadcaster.yield(.remoteChangesApplied)
     }
 
     /// Closes the database and finishes `changes`. Later mutations throw `StoreError.closed`.
     func close() async {
         await store.close()
-        changeContinuation.finish()
+        broadcaster.finish()
     }
 
     // MARK: Reads
@@ -225,7 +226,7 @@ actor SnippetLibrary {
     private func commit<T>(_ change: (T) -> LibraryChange, _ write: (SnippetStore) async throws -> T) async throws -> T {
         let result = try await write(store)
         try await reload()
-        changeContinuation.yield(change(result))
+        broadcaster.yield(change(result))
         return result
     }
 

@@ -17,6 +17,7 @@ struct KeyloomApp: App {
             LibraryWindow(model: environment.model)
                 .onAppear {
                     appDelegate.model = environment.model
+                    appDelegate.shutdown = { [environment] in await environment.shutdown() }
                     environment.model.quitAction = { NSApp.terminate(nil) }
                 }
         }

@@ -128,7 +128,10 @@ final class LibraryViewModel {
 
     /// Follows commits made elsewhere (the editor, later sync and the picker). Ends when the library closes.
     func observeChanges() async {
-        for await _ in library.changes { await refresh() }
+        // Subscribe first, then read: a change committed in between is never missed.
+        let changes = library.changes
+        await refresh()
+        for await _ in changes { await refresh() }
     }
 
     func clearSearch() async {

@@ -292,6 +292,7 @@ final class SnippetLibraryTests: StoreTestCase {
 
     func testChangesStreamReportsEachCommittedMutationInOrder() async throws {
         let library = try await openLibrary(at: try databaseURL())
+        let stream = library.changes  // a stream sees changes committed after it was requested
         let created = try await library.create(name: "A", icon: .emoji("a"), keyword: ";a", template: try document("a"))
         _ = try await library.rename(id: created.id, to: "B")
         _ = try await library.setPinned(true, id: created.id)
@@ -304,7 +305,7 @@ final class SnippetLibraryTests: StoreTestCase {
         await library.close()
 
         var seen: [LibraryChange] = []
-        for await change in library.changes { seen.append(change) }
+        for await change in stream { seen.append(change) }
         XCTAssertEqual(seen, [.created(created.id), .updated(created.id), .updated(created.id), .usageRecorded(created.id),
                               .deleted(created.id), .restored(created.id)], "a failed write publishes nothing")
     }

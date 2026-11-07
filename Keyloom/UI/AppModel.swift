@@ -40,7 +40,10 @@ final class AppModel {
     /// Why the last daily snapshot failed, for Settings. The library works regardless.
     private(set) var snapshotError: String?
     @ObservationIgnored private let openLibrary: @MainActor (URL) async throws -> SnippetLibrary
+    /// Called after each library change was applied to the open editor (tests wait on it).
+    @ObservationIgnored var onChangeHandled: (@MainActor () -> Void)?
     @ObservationIgnored private var opening: Task<Void, Never>?
+    @ObservationIgnored private var changeObserver: Task<Void, Never>?
     @ObservationIgnored private var writingToolsPolicy: WritingAssistancePolicy?
     @ObservationIgnored private var dayChangeObservers: [any NSObjectProtocol] = []
     /// The newest snapshot started by a day change, for tests to await.
@@ -86,9 +89,25 @@ final class AppModel {
             model.selectionRequest = { [weak self] id in await self?.requestSelection(id) }
             await model.refresh()
             phase = .ready(library, model)
+            observeLibraryChanges(of: library)
             await takeDailySnapshot(of: library)
         } catch {
             phase = .failed(UserMessage.describe(error))
+        }
+    }
+
+    /// One app-lifetime subscriber (the window's own list refresh stops with the window): keeps an open, clean
+    /// editor current when sync, an import or another surface changes the snippet it shows.
+    private func observeLibraryChanges(of library: SnippetLibrary) {
+        let changes = library.changes
+        changeObserver?.cancel()
+        changeObserver = Task { [weak self] in
+            for await change in changes {
+                guard let self else { return }
+                if case .usageRecorded = change { continue }
+                await editor?.refreshFromLibrary()
+                onChangeHandled?()
+            }
         }
     }
 
