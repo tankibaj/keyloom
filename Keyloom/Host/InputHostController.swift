@@ -56,8 +56,11 @@ struct HostDependencies {
     var makeTap: (InputHost) -> EventTapControlling
     var settle: (TimeInterval) async -> Void
     var ownBundleID: String?
-    /// Seconds between permission re-checks while started; nil disables polling.
+    /// Seconds between permission re-checks while a permission is missing and the controller is started; nil
+    /// disables polling. A granted app is not polled: each check is a synchronous round trip to the TCC daemon.
     var permissionPollInterval: TimeInterval?
+    /// Registers for permission changes the system announces and returns the remover.
+    var observePermissionChanges: (@escaping @MainActor () -> Void) -> () -> Void = { _ in {} }
     /// Registers for app-activation changes and returns the remover.
     var observeAppActivation: (@escaping @MainActor () -> Void) -> () -> Void = { _ in {} }
 
@@ -69,6 +72,18 @@ struct HostDependencies {
             settle: { try? await Task.sleep(for: .seconds($0)) },
             ownBundleID: Bundle.main.bundleIdentifier,
             permissionPollInterval: 1,
+            observePermissionChanges: { changed in
+                // The system posts this when Accessibility trust changes, before the answer settles.
+                let token = DistributedNotificationCenter.default().addObserver(
+                    forName: Notification.Name("com.apple.accessibility.api"), object: nil, queue: .main
+                ) { _ in
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(500))
+                        changed()
+                    }
+                }
+                return { DistributedNotificationCenter.default().removeObserver(token) }
+            },
             observeAppActivation: { invalidate in
                 let token = NSWorkspace.shared.notificationCenter.addObserver(
                     forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
@@ -105,6 +120,7 @@ final class InputHostController {
     @ObservationIgnored private var copyOffer: RenderedSnippet?
     @ObservationIgnored private var pollTimer: Timer?
     @ObservationIgnored private var removeActivationObserver: (() -> Void)?
+    @ObservationIgnored private var removePermissionObserver: (() -> Void)?
     @ObservationIgnored private var isStarted = false
     /// Typed expansions and picker insertions in flight; keys are dropped while any is.
     @ObservationIgnored private var suspensions = 0
@@ -156,11 +172,7 @@ final class InputHostController {
         isStarted = true
         status.shortcut = shortcuts.apply(preferences.load().shortcut)
         removeActivationObserver = dependencies.observeAppActivation { [weak self] in self?.inputHost.invalidate() }
-        if let interval = dependencies.permissionPollInterval {
-            pollTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refreshPermissions() }
-            }
-        }
+        removePermissionObserver = dependencies.observePermissionChanges { [weak self] in self?.refreshPermissions() }
         refreshPermissions()
     }
 
@@ -170,6 +182,8 @@ final class InputHostController {
         pollTimer = nil
         removeActivationObserver?()
         removeActivationObserver = nil
+        removePermissionObserver?()
+        removePermissionObserver = nil
         cancelExpansion()
         tap.stop()
         inputHost.isEnabled = false
@@ -193,8 +207,21 @@ final class InputHostController {
             inputHost.isEnabled = false
             cancelExpansion()
         }
-        status.permissions = current
+        if status.permissions != current { status.permissions = current }
         publishState()
+        pollWhileMissing(ready: current.inputReady)
+    }
+
+    private func pollWhileMissing(ready: Bool) {
+        guard isStarted, let interval = dependencies.permissionPollInterval else { return }
+        if ready {
+            pollTimer?.invalidate()
+            pollTimer = nil
+        } else if pollTimer == nil {
+            pollTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshPermissions() }
+            }
+        }
     }
 
     // MARK: Settings
@@ -334,11 +361,14 @@ final class InputHostController {
         publishState()
     }
 
+    /// Writes only a real change: an @Observable write wakes every observer, equal value or not.
     private func publishState() {
-        status.isTapRunning = tap.isRunning
-        status.isPaused = inputHost.isPaused
-        status.isSecureInputActive = dependencies.environment.isSecureInputActive
-        status.counters = inputHost.counters
+        var next = status
+        next.isTapRunning = tap.isRunning
+        next.isPaused = inputHost.isPaused
+        next.isSecureInputActive = dependencies.environment.isSecureInputActive
+        next.counters = inputHost.counters
+        if next != status { status = next }
     }
 
     /// Clipboard text is read lazily, only when a template uses `{clipboard}`. The render runs off the main
