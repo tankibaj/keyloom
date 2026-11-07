@@ -26,7 +26,7 @@ final class LocalSyncSettingsTests: XCTestCase {
     }
 
     func testEveryStatusHasAnExplanationAndASymbol() {
-        for status in SyncStatus.allCases {
+        for status in SyncSettingsStatus.allCases {
             XCTAssertFalse(SyncCopy.description(for: status).isEmpty, "\(status)")
             XCTAssertFalse(SyncCopy.symbol(for: status).isEmpty, "\(status)")
         }
@@ -35,7 +35,7 @@ final class LocalSyncSettingsTests: XCTestCase {
     func testSignedOutQuotaAndUnavailableNameTheirCauseWithoutBlamingAnAdministrator() {
         XCTAssertTrue(SyncCopy.description(for: .signedOut).contains("Sign in to iCloud"))
         XCTAssertTrue(SyncCopy.description(for: .quota).contains("storage"))
-        for status in SyncStatus.allCases {
+        for status in SyncSettingsStatus.allCases {
             XCTAssertFalse(SyncCopy.description(for: status).lowercased().contains("administrator"), "\(status)")
         }
     }

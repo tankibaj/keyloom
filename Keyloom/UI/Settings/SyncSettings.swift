@@ -3,7 +3,7 @@ import Observation
 
 /// What the iCloud Sync section can show. `off` is the user's choice; the rest are conditions reported by the
 /// provider. None of them blocks local editing, expansion or backups.
-enum SyncStatus: Equatable, CaseIterable {
+enum SyncSettingsStatus: Equatable, CaseIterable {
     case off, signedOut, unavailable, quota, syncing, upToDate, error
 }
 
@@ -13,7 +13,7 @@ enum SyncStatus: Equatable, CaseIterable {
 @MainActor
 protocol SyncSettingsProviding: AnyObject, Observable {
     var isEnabled: Bool { get }
-    var status: SyncStatus { get }
+    var status: SyncSettingsStatus { get }
     func setEnabled(_ enabled: Bool)
 }
 
@@ -30,7 +30,7 @@ final class LocalOnlySyncSettings: SyncSettingsProviding {
         isEnabled = defaults.bool(forKey: Self.key)
     }
 
-    var status: SyncStatus { isEnabled ? .unavailable : .off }
+    var status: SyncSettingsStatus { isEnabled ? .unavailable : .off }
 
     func setEnabled(_ enabled: Bool) {
         isEnabled = enabled
@@ -40,7 +40,7 @@ final class LocalOnlySyncSettings: SyncSettingsProviding {
 
 /// Words and symbols for each status. Every state has text as well as an icon, so color never carries it alone.
 enum SyncCopy {
-    static func description(for status: SyncStatus) -> String {
+    static func description(for status: SyncSettingsStatus) -> String {
         switch status {
         case .off:
             "Off. Your snippets stay on this Mac. Turn this on to keep them in sync through your private iCloud."
@@ -59,7 +59,7 @@ enum SyncCopy {
         }
     }
 
-    static func symbol(for status: SyncStatus) -> String {
+    static func symbol(for status: SyncSettingsStatus) -> String {
         switch status {
         case .off: "icloud"
         case .signedOut: "person.crop.circle.badge.exclamationmark"
