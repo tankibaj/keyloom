@@ -69,6 +69,11 @@ final class WritingAssistancePolicy {
         observers.append(handler)
     }
 
+    /// Ends the service's pending work whenever the effective policy changes (see `AssistanceService.make`).
+    func attach(_ service: AssistanceService) {
+        observeChanges { _ in Task { await service.policyDidChange() } }
+    }
+
     private func makeSnapshot() -> PolicySnapshot {
         let managedPolicy = managed.read()
         let assistanceOptIn = defaults.bool(forKey: Self.assistanceKey)
