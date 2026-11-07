@@ -59,6 +59,9 @@ final class MenuBarModel {
 
     var needsAccessibility: Bool { status == .needsAccessibility }
 
+    /// New Snippet and Open Picker are for a working Keyloom; without Accessibility the menu stays at Library, Settings, Quit.
+    var showsExpansionCommands: Bool { !needsAccessibility }
+
     /// The status row's switch: on means expanding. Off when paused or when Accessibility is missing.
     var isExpanding: Bool {
         get { status == .on }
@@ -86,7 +89,6 @@ final class MenuBarModel {
 
     func openAccessibilitySettings() { NSWorkspace.shared.open(ExpansionSettingsModel.accessibilitySettingsURL) }
 
-    var symbolName: String { isPaused ? "pause.circle" : "text.cursor" }
     var shortcutWarning: String? { ShortcutDisplay.message(for: host.status.shortcut) }
     var hasCopyOffer: Bool { host.status.hasCopyOffer }
 

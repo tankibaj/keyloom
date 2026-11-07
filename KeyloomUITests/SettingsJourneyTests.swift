@@ -36,15 +36,17 @@ final class SettingsJourneyTests: KeyloomUITestCase {
             shot("general-shortcut-recording", of: [settings])
             app.typeKey(.escape, modifierFlags: [])
             expect(settings.buttons["settings.general.shortcutReset"].exists, "Reset is offered")
+            expect(settings.switches["settings.general.openAtLogin"].exists && settings.switches["settings.general.showInMenuBar"].exists,
+                   "the Startup group offers open at login and show in menu bar")
 
-            // Expansion: health, permissions (not granted in the inert host), excluded apps.
+            // Expansion: permissions (not granted in the inert host), excluded apps.
             try openSettings(tab: "Expansion")
             shot("expansion", of: [settings])
             expect(settings.switches["settings.expansion.uninspectable"].exists, "the behavior switch is offered")
             expect(settings.buttons["settings.expansion.request"].exists, "access can be requested while a permission is missing")
 
             // Sync & Backups.
-            try openSettings(tab: "Sync & Backups")
+            try openSettings(tab: "Sync")
             let sync = settings.switches["settings.sync.toggle"]
             try need(sync, "iCloud sync switch")
             expect((sync.value as? String) == "0" || (sync.value as? Int) == 0, "iCloud Sync is off by default")
@@ -92,7 +94,7 @@ final class SettingsJourneyTests: KeyloomUITestCase {
             shot("restored", of: [settings])
 
             // Writing Assistance: off by default, then on.
-            try openSettings(tab: "Writing Assistance")
+            try openSettings(tab: "Assistance")
             let assistance = settings.switches["settings.assistance.toggle"]
             try need(assistance, "assistance switch")
             expect((assistance.value as? String) == "0" || (assistance.value as? Int) == 0, "writing assistance is off by default")

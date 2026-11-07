@@ -201,12 +201,14 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 0) {
             command("Open Library", symbol: "books.vertical", shortcut: "⌘L", id: "openLibrary") { showLibrary() }
                 .keyboardShortcut("l", modifiers: .command)
-            command("New Snippet…", symbol: "square.and.pencil", shortcut: "⌘N", id: "newSnippet") {
-                showLibrary()
-                Task { await app.requestNewSnippet() }
+            if model.showsExpansionCommands {
+                command("New Snippet…", symbol: "square.and.pencil", shortcut: "⌘N", id: "newSnippet") {
+                    showLibrary()
+                    Task { await app.requestNewSnippet() }
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                command("Open Picker", symbol: "magnifyingglass", shortcut: model.pickerShortcutHint, id: "openPicker") { model.openPicker() }
             }
-            .keyboardShortcut("n", modifiers: .command)
-            command("Open Picker", symbol: "magnifyingglass", shortcut: model.pickerShortcutHint, id: "openPicker") { model.openPicker() }
             menuDivider
             command("Settings…", symbol: "gearshape", shortcut: "⌘,", id: "settings") {
                 NSApp.activate()

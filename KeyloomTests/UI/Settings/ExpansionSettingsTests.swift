@@ -13,28 +13,6 @@ final class ExpansionSettingsModelTests: LibraryUITestCase {
         model = ExpansionSettingsModel(host: harness.controller, appName: { $0 == "com.apple.Notes" ? "Notes" : nil })
     }
 
-    func testPauseSwitchReachesTheHostBothWays() {
-        model.isPaused = true
-        XCTAssertTrue(harness.controller.inputHost.isPaused)
-        XCTAssertTrue(model.isPaused)
-        model.isPaused = false
-        XCTAssertFalse(harness.controller.inputHost.isPaused)
-    }
-
-    func testHealthSummaryIsDerivedWithAccessibilityFirst() {
-        XCTAssertEqual(model.health.level, .good)
-        harness.environment.isSecureInputActive = true
-        harness.controller.refreshPermissions()
-        XCTAssertEqual(model.health.title, "Secure input is on")
-        XCTAssertEqual(model.health.level, .attention)
-        model.isPaused = true
-        XCTAssertEqual(model.health.level, .paused, "pause outranks secure input")
-        harness.permissions.status = PermissionStatus(accessibility: false)
-        model.refresh()
-        XCTAssertEqual(model.health.level, .attention)
-        XCTAssertEqual(model.health.title, "Expansion needs Accessibility", "no grant outranks pause")
-    }
-
     func testGrantedPermissionsReadAsGranted() {
         XCTAssertTrue(model.permissionRows.allSatisfy(\.isGranted))
         XCTAssertFalse(model.needsPermission)

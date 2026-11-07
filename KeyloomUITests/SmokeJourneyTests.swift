@@ -28,14 +28,14 @@ final class SmokeJourneyTests: KeyloomUITestCase {
         try launchApp()
         _ = libraryWindow
         app.typeKey(",", modifierFlags: .command)
-        let settings = app.windows.matching(NSPredicate(format: "title IN {'General','Expansion','Sync & Backups','Writing Assistance','Keyloom Settings'}")).firstMatch
+        let settings = app.windows.matching(NSPredicate(format: "title IN {'General','Expansion','Sync','Assistance','Keyloom Settings'}")).firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 15), "Settings window did not open")
 
         let checks: [(tab: String, element: (XCUIElement) -> XCUIElement)] = [
             ("General", { $0.segmentedControls["settings.general.appearance"] }),
             ("Expansion", { $0.switches["settings.expansion.uninspectable"] }),
-            ("Sync & Backups", { $0.buttons["settings.snapshots.backup"] }),
-            ("Writing Assistance", { $0.switches["Use on-device writing assistance"] }),
+            ("Sync", { $0.buttons["settings.snapshots.backup"] }),
+            ("Assistance", { $0.switches["Use on-device writing assistance"] }),
         ]
         for check in checks {
             let tab = settings.toolbars.buttons[check.tab]

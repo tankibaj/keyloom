@@ -5,12 +5,14 @@ import Foundation
 /// How a global shortcut and its registration state read to the user (menu bar, picker and Settings).
 enum ShortcutDisplay {
     /// Control, Option, Shift, Command in the system's order, then the key: "⌃⌥Space".
-    static func string(for config: ShortcutConfig) -> String {
-        var text = ""
-        for (flag, symbol) in [(controlKey, "⌃"), (optionKey, "⌥"), (shiftKey, "⇧"), (cmdKey, "⌘")] where config.modifiers & UInt32(flag) != 0 {
-            text += symbol
-        }
-        return text + keyName(config.keyCode)
+    static func string(for config: ShortcutConfig) -> String { keys(for: config).joined() }
+
+    /// The same shortcut one keycap at a time: ["⌃", "⌥", "Space"].
+    static func keys(for config: ShortcutConfig) -> [String] {
+        let modifiers = [(controlKey, "⌃"), (optionKey, "⌥"), (shiftKey, "⇧"), (cmdKey, "⌘")]
+            .filter { config.modifiers & UInt32($0.0) != 0 }
+            .map(\.1)
+        return modifiers + [keyName(config.keyCode)]
     }
 
     /// Nil when the shortcut works (or is not set up yet); otherwise what is wrong and what to do.

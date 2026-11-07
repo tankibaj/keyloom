@@ -23,7 +23,7 @@ struct KeyloomApp: App {
         }
         .windowResizability(.contentMinSize)
         .commands { LibraryCommands(model: environment.model) }
-        MenuBarExtra {
+        MenuBarExtra(isInserted: Bindable(environment.startup).showInMenuBar) {
             if let menuBar = environment.services?.menuBar {
                 MenuBarView(model: menuBar, app: environment.model)
             } else {

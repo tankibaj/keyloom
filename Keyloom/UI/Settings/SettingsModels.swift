@@ -5,6 +5,7 @@ import Foundation
 struct SettingsModels {
     let appearance: AppearanceSettings
     let shortcut: ShortcutSettingsModel
+    let startup: StartupSettings
     let expansion: ExpansionSettingsModel
     let backups: SyncBackupsModel
     let sync: SyncSettingsViewModel

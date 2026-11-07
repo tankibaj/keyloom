@@ -35,15 +35,21 @@ final class MenuBarModelTests: PickerTestCase {
         XCTAssertTrue(menu.recents.isEmpty)
     }
 
-    func testPauseToggleReachesTheHostAndChangesTheMenuBarSymbol() async throws {
+    func testPauseToggleReachesTheHost() async throws {
         try await makeMenu { _ in }
-        let running = menu.symbolName
         menu.isPaused = true
         XCTAssertTrue(harness.controller.status.isPaused)
         XCTAssertTrue(harness.controller.inputHost.isPaused)
-        XCTAssertNotEqual(menu.symbolName, running)
         menu.isPaused = false
-        XCTAssertEqual(menu.symbolName, running)
+        XCTAssertFalse(harness.controller.inputHost.isPaused)
+    }
+
+    func testWithoutAccessibilityOnlyLibrarySettingsAndQuitRemain() async throws {
+        try await makeMenu { _ in }
+        XCTAssertTrue(menu.showsExpansionCommands)
+        harness.permissions.status = PermissionStatus(accessibility: false)
+        harness.controller.refreshPermissions()
+        XCTAssertFalse(menu.showsExpansionCommands, "New Snippet and Open Picker are hidden until Accessibility is granted")
     }
 
     func testStatusFollowsPermissionThenPause() async throws {

@@ -26,4 +26,9 @@ final class ShortcutDisplayTests: XCTestCase {
         XCTAssertTrue(ShortcutDisplay.message(for: .failed(config, status: -1))?.contains("refused") == true)
         XCTAssertTrue(ShortcutDisplay.message(for: .invalid(ShortcutConfig(keyCode: 0, modifiers: UInt32(shiftKey))))?.contains("Command, Control or Option") == true)
     }
+
+    func testKeycapsListEachModifierThenTheKey() {
+        XCTAssertEqual(ShortcutDisplay.keys(for: .defaultShortcut), ["⌃", "⌥", "Space"])
+        XCTAssertEqual(ShortcutDisplay.keys(for: ShortcutConfig(keyCode: UInt32(kVK_F5), modifiers: UInt32(cmdKey))), ["⌘", "F5"])
+    }
 }

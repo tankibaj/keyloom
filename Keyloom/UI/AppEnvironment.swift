@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import ServiceManagement
 
 /// Which OS boundaries the app runs on: the real ones, or inert ones for UI tests and for the app hosting XCTest
 /// (a unit-test run must never install an event tap or a global hotkey).
@@ -29,6 +30,8 @@ final class AppEnvironment {
     let model: AppModel
     let mode: LaunchMode
     private(set) var services: Services?
+    /// Built with the environment, not the services: the menu bar item's visibility is needed before the library opens.
+    let startup: StartupSettings
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let syncAdapter: (any SyncEngineAdapter)?
@@ -41,7 +44,9 @@ final class AppEnvironment {
          syncAdapter: (any SyncEngineAdapter)? = nil) {
         self.model = model
         self.mode = mode
-        self.defaults = defaults ?? Self.defaults(for: mode)
+        let defaults = defaults ?? Self.defaults(for: mode)
+        self.defaults = defaults
+        startup = StartupSettings(loginItem: mode == .live ? SMAppService.mainApp : InertLoginItem(), defaults: defaults)
         self.syncAdapter = syncAdapter
     }
 
@@ -75,6 +80,7 @@ final class AppEnvironment {
                                                 sessions: mode == .live ? SystemModelSessionFactory() : EchoModelSessionFactory())
         let settings = SettingsModels(
             appearance: AppearanceSettings(defaults: defaults), shortcut: ShortcutSettingsModel(host: host),
+            startup: startup,
             expansion: ExpansionSettingsModel(host: host),
             backups: SyncBackupsModel(library: library, snapshots: model.snapshots),
             sync: SyncSettingsViewModel(controller: sync, preference: syncPreference),

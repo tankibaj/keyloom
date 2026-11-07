@@ -76,7 +76,7 @@ final class AccessibilityJourneyTests: KeyloomUITestCase {
             attachText(libraryUnnamed.joined(separator: "\n"), name: "unnamed-library")
             expect(libraryUnnamed.isEmpty, "library controls without an accessibility name: \(libraryUnnamed)")
             var settingsUnnamed: [String] = []
-            for tab in ["General", "Expansion", "Sync & Backups", "Writing Assistance"] {
+            for tab in ["General", "Expansion", "Sync", "Assistance"] {
                 let settings = try openSettings(tab: tab)
                 settingsUnnamed += unnamedControls(in: settings).map { "\(tab): \($0)" }
             }
@@ -97,7 +97,7 @@ final class AccessibilityJourneyTests: KeyloomUITestCase {
             shot("assistance-off")
 
             // Turn it on in Settings > Writing Assistance.
-            let settings = try openSettings(tab: "Writing Assistance")
+            let settings = try openSettings(tab: "Assistance")
             let toggle = settings.switches["settings.assistance.toggle"]
             try need(toggle, "assistance switch")
             toggle.click()
@@ -149,7 +149,7 @@ final class AccessibilityJourneyTests: KeyloomUITestCase {
             shot("assistance-undone")
 
             // Off again: the action disappears.
-            let again = try openSettings(tab: "Writing Assistance")
+            let again = try openSettings(tab: "Assistance")
             again.switches["settings.assistance.toggle"].click()
             closeSettings(again)
             expect(disappears(menu), "the assistance action disappears when writing assistance is turned off")

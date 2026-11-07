@@ -103,7 +103,7 @@ class KeyloomUITestCase: XCTestCase {
 
     /// The Settings window: its title is the selected tab's name.
     var settingsWindow: XCUIElement {
-        app.windows.matching(NSPredicate(format: "title IN {'General','Expansion','Sync & Backups','Writing Assistance','Keyloom Settings','Settings'}")).firstMatch
+        app.windows.matching(NSPredicate(format: "title IN {'General','Expansion','Sync','Assistance','Keyloom Settings','Settings'}")).firstMatch
     }
 
     /// Closes through the window's own close button, so the library window can never be the one that closes.

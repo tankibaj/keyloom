@@ -12,15 +12,15 @@ struct SettingsView: View {
         if let settings {
             TabView {
                 Tab("General", systemImage: "gearshape") {
-                    GeneralSettingsView(appearance: settings.appearance, shortcut: settings.shortcut)
+                    GeneralSettingsView(appearance: settings.appearance, shortcut: settings.shortcut, startup: settings.startup)
                 }
                 Tab("Expansion", systemImage: "keyboard") {
                     ExpansionSettingsView(model: settings.expansion)
                 }
-                Tab("Sync & Backups", systemImage: "icloud") {
+                Tab("Sync", systemImage: "icloud") {
                     SyncBackupsSettingsView(sync: settings.sync, backups: settings.backups, snapshotError: snapshotError)
                 }
-                Tab("Writing Assistance", systemImage: "wand.and.stars") {
+                Tab("Assistance", systemImage: "wand.and.stars") {
                     WritingAssistanceSettingsView(model: settings.assistance)
                 }
             }
@@ -34,6 +34,7 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     @Bindable var appearance: AppearanceSettings
     @Bindable var shortcut: ShortcutSettingsModel
+    @Bindable var startup: StartupSettings
     @State private var recorder = KeyRecorder()
 
     /// The app's fixed commands, taught here as well as in the menus.
@@ -52,22 +53,35 @@ struct GeneralSettingsView: View {
                 Text("Auto follows the appearance you chose in macOS.").font(.callout).foregroundStyle(.secondary)
             }
             Section("Quick Picker") {
-                LabeledContent("Shortcut") {
-                    Button(shortcut.isRecording ? "Type the shortcut…" : shortcut.display) {
-                        if shortcut.isRecording { shortcut.cancelRecording() } else { shortcut.beginRecording() }
-                    }
-                    .accessibilityLabel("Picker shortcut")
-                    .accessibilityValue(shortcut.isRecording ? "Recording" : shortcut.display)
-                    .accessibilityHint("Activate, then press the new key combination. Escape cancels.")
-                    .accessibilityIdentifier("settings.general.shortcut")
-                }
+                LabeledContent("Open Picker") { shortcutField }
                 if let message = shortcut.message {
                     Label(message, systemImage: "exclamationmark.triangle")
                         .font(.callout)
                         .accessibilityIdentifier("settings.general.shortcutMessage")
                 }
-                Button("Reset to Control-Option-Space") { shortcut.reset() }
-                    .accessibilityIdentifier("settings.general.shortcutReset")
+                LabeledContent {
+                    Button("Reset") { shortcut.reset() }
+                        .accessibilityLabel("Reset picker shortcut to Control-Option-Space")
+                        .accessibilityIdentifier("settings.general.shortcutReset")
+                } label: {
+                    Text("Click the field, then press the new combination. Esc cancels.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            Section("Startup") {
+                Toggle("Open Keyloom at login", isOn: $startup.opensAtLogin)
+                    .accessibilityIdentifier("settings.general.openAtLogin")
+                if startup.needsApproval {
+                    Text("Allow Keyloom under System Settings > General > Login Items.")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("settings.general.loginApproval")
+                }
+                if let error = startup.errorMessage {
+                    Label(error, systemImage: "exclamationmark.triangle").font(.callout)
+                        .accessibilityIdentifier("settings.general.loginError")
+                }
+                Toggle("Show in menu bar", isOn: $startup.showInMenuBar)
+                    .accessibilityIdentifier("settings.general.showInMenuBar")
             }
             Section("Keyboard Shortcuts") {
                 ForEach(Self.appShortcuts, id: \.title) { item in
@@ -81,10 +95,49 @@ struct GeneralSettingsView: View {
         .onChange(of: shortcut.isRecording) { _, recording in
             if recording { recorder.start { shortcut.handleKey(keyCode: $0, modifiers: $1) } } else { recorder.stop() }
         }
+        .onAppear { startup.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in startup.refresh() }
         .onDisappear {
             shortcut.cancelRecording()
             recorder.stop()
         }
+    }
+
+    /// The shortcut as keycaps in a field. The field records; the ✕ (while recording) cancels. There is no "no
+    /// shortcut" state: the picker always has one, so Reset is the way back to the default.
+    private var shortcutField: some View {
+        HStack(spacing: 4) {
+            Button {
+                if shortcut.isRecording { shortcut.cancelRecording() } else { shortcut.beginRecording() }
+            } label: {
+                HStack(spacing: 4) {
+                    if shortcut.isRecording {
+                        Text("Type the shortcut…").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(ShortcutDisplay.keys(for: shortcut.current).enumerated()), id: \.offset) { SettingsKeycap(text: $1) }
+                    }
+                }
+                .frame(minWidth: 120, minHeight: 24, alignment: .leading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Picker shortcut")
+            .accessibilityValue(shortcut.isRecording ? "Recording" : shortcut.display)
+            .accessibilityHint("Activate, then press the new key combination. Escape cancels.")
+            .accessibilityIdentifier("settings.general.shortcut")
+            if shortcut.isRecording {
+                Button("Cancel", systemImage: "xmark.circle.fill") { shortcut.cancelRecording() }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Cancel recording")
+                    .accessibilityIdentifier("settings.general.shortcutCancel")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(shortcut.isRecording ? Color.accentColor : .clear, lineWidth: 2))
     }
 }
 
@@ -127,7 +180,6 @@ struct ExpansionSettingsView: View {
 
     var body: some View {
         Form {
-            Section { healthRow }
             Section("Permission") {
                 ForEach(model.permissionRows) { row in
                     LabeledContent {
@@ -213,25 +265,6 @@ struct ExpansionSettingsView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
-    }
-
-    private var healthRow: some View {
-        let health = model.health
-        let tint: Color = switch health.level {
-        case .good: .green
-        case .paused: .secondary
-        case .attention: .orange
-        }
-        return Label {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(health.title).fontWeight(.semibold)
-                Text(health.detail).font(.callout).foregroundStyle(.secondary)
-            }
-        } icon: {
-            Image(systemName: health.symbol).foregroundStyle(tint).font(.title3)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("settings.expansion.health")
     }
 
     /// The app's own icon, or the generic application icon when it is not installed.
