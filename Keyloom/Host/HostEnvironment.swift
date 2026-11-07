@@ -4,14 +4,12 @@ import Carbon.HIToolbox
 
 // The OS boundaries of the input host, as protocols so the decision logic is testable without a real keyboard.
 
+/// Accessibility is the only grant Keyloom asks for: it covers the key tap (an active tap, not a listen-only
+/// one, which would need Input Monitoring), the field reads and writes, and the keystrokes it posts.
 struct PermissionStatus: Equatable, Sendable {
     var accessibility: Bool
-    var inputMonitoring: Bool
-    /// Only the explicit paste route posts events; plain AX insertion does not need it.
-    var postEvents: Bool
 
-    /// Reading keys and writing through Accessibility both need to be granted.
-    var inputReady: Bool { accessibility && inputMonitoring }
+    var inputReady: Bool { accessibility }
 }
 
 @MainActor
@@ -32,19 +30,18 @@ protocol InputEnvironment: AnyObject {
 @MainActor
 protocol WorkspaceInfo: AnyObject {
     var frontmostBundleID: String? { get }
+    var frontmostPID: Int32? { get }
 }
 
 @MainActor
 final class SystemPermissions: PermissionChecking {
     func current() -> PermissionStatus {
-        PermissionStatus(accessibility: AXIsProcessTrusted(), inputMonitoring: CGPreflightListenEventAccess(),
-                         postEvents: CGPreflightPostEventAccess())
+        PermissionStatus(accessibility: AXIsProcessTrusted())
     }
 
     func request() {
         // The literal is kAXTrustedCheckOptionPrompt, a mutable global Swift 6 will not let us read.
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
-        _ = CGRequestListenEventAccess()
     }
 }
 
@@ -66,4 +63,5 @@ final class SystemInputEnvironment: InputEnvironment {
 @MainActor
 final class SystemWorkspace: WorkspaceInfo {
     var frontmostBundleID: String? { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
+    var frontmostPID: Int32? { NSWorkspace.shared.frontmostApplication?.processIdentifier }
 }

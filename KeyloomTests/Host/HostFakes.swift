@@ -13,11 +13,12 @@ final class FakeInputEnvironment: InputEnvironment {
 @MainActor
 final class FakeWorkspace: WorkspaceInfo {
     var frontmostBundleID: String? = "com.apple.TextEdit"
+    var frontmostPID: Int32? = 100
 }
 
 @MainActor
 final class FakePermissions: PermissionChecking {
-    var status = PermissionStatus(accessibility: true, inputMonitoring: true, postEvents: true)
+    var status = PermissionStatus(accessibility: true)
     private(set) var requestCount = 0
     func current() -> PermissionStatus { status }
     func request() { requestCount += 1 }
@@ -139,8 +140,12 @@ final class FakePasteboard: PasteboardAccess {
         return taken
     }
 
-    func write(plain: String, rtf: Data?) -> Int {
+    /// Whether the latest write was marked as a borrowed clipboard.
+    private(set) var lastWriteWasTransient = false
+
+    func write(plain: String, rtf: Data?, transient: Bool) -> Int {
         writeCount += 1
+        lastWriteWasTransient = transient
         items = [["public.utf8-plain-text": Data(plain.utf8)].merging(rtf.map { ["public.rtf": $0] } ?? [:]) { $1 }]
         changeCount += 1
         onWrite?()
@@ -164,12 +169,34 @@ final class FakePasteboard: PasteboardAccess {
 @MainActor
 final class FakePasteKeys: PasteKeyPosting {
     private(set) var postCount = 0
+    /// Every keystroke group posted, in order: "backspaces:3", "paste", "left:2".
+    private(set) var posted: [String] = []
     var succeeds = true
     var onPost: (() -> Void)?
 
-    func postPaste() -> Bool {
+    /// The process every keystroke was addressed to.
+    private(set) var targets: [Int32] = []
+
+    func postPaste(toPid pid: Int32) -> Bool {
         postCount += 1
+        targets.append(pid)
+        posted.append("paste")
         onPost?()
+        return succeeds
+    }
+
+    func postDeletesThenPaste(deleting count: Int, toPid pid: Int32) -> Bool {
+        guard succeeds else { return false }
+        postCount += 1
+        targets.append(pid)
+        posted += ["backspaces:\(count)", "paste"]
+        onPost?()
+        return true
+    }
+
+    func postLeftArrows(_ count: Int, toPid pid: Int32) -> Bool {
+        targets.append(pid)
+        posted.append("left:\(count)")
         return succeeds
     }
 }

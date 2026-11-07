@@ -105,6 +105,12 @@ struct ExpansionSettingsView: View {
                     .accessibilityIdentifier("settings.expansion.pause")
                 Text("While paused, typing a keyword does nothing. The picker still works.").font(.callout).foregroundStyle(.secondary)
             }
+            Section {
+                Toggle("Expand in apps Keyloom can’t inspect", isOn: $model.expandsInUninspectableApps)
+                    .accessibilityIdentifier("settings.expansion.uninspectable")
+                Text("Browsers, Electron apps and terminals don’t let Keyloom read the field, so it deletes the keyword and pastes the snippet instead. Never in secure fields, excluded apps or Finder.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
             Section("Permissions") {
                 ForEach(model.permissionRows) { row in
                     LabeledContent {
@@ -117,12 +123,12 @@ struct ExpansionSettingsView: View {
                         }
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("settings.expansion.permission.\(row.kind)")
+                    .accessibilityIdentifier("settings.expansion.permission.\(row.id.lowercased())")
                 }
                 if model.needsPermission {
                     Button("Request Access…") { model.requestPermissions() }
                         .accessibilityIdentifier("settings.expansion.request")
-                    Button("Open Privacy & Security Settings") { openURL(ExpansionSettingsModel.systemSettingsURL(for: .accessibility)) }
+                    Button("Open Privacy & Security Settings") { openURL(ExpansionSettingsModel.accessibilitySettingsURL) }
                         .accessibilityIdentifier("settings.expansion.openSystemSettings")
                 }
                 if let note = model.secureInputNote {

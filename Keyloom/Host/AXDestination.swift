@@ -12,21 +12,35 @@ import ApplicationServices
 final class AXDestination: DestinationAccess {
     private typealias Focus = (element: AXUIElement, token: FocusToken)
 
+    private static let messagingTimeout: Float = 0.15
     private var identities = ElementIdentityCache<AXUIElement>(capacity: 16, same: { CFEqual($0, $1) })
 
     init() {
-        // A hung target app must not freeze Keyloom for the 6 s default.
-        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.5)
+        // A hung target app must not freeze Keyloom (or, through the key tap, everyone's typing) for the 6 s default.
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), Self.messagingTimeout)
     }
 
     private func focused() -> Focus? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &value) == .success,
-              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        guard let value = focusedElement() else { return nil }
         let element = unsafeDowncast(value, to: AXUIElement.self)
         var pid: pid_t = 0
         guard AXUIElementGetPid(element, &pid) == .success else { return nil }
         return (element, FocusToken(pid: pid, element: identities.id(for: element)))
+    }
+
+    /// The system-wide query fails for some apps (terminals, Chromium, Electron) that still answer when asked
+    /// directly, so the frontmost app is the second try.
+    private func focusedElement() -> CFTypeRef? {
+        var value: CFTypeRef?
+        if AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &value) == .success,
+           let value, CFGetTypeID(value) == AXUIElementGetTypeID() { return value }
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, Self.messagingTimeout)
+        value = nil
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return value
     }
 
     private func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {

@@ -10,8 +10,10 @@ protocol PasteboardAccess: AnyObject, Sendable {
     func plainText() -> String?
     /// All items, or nil when they cannot be put back exactly (concealed/secret, promised or oversize data).
     func snapshot() -> PasteboardItems?
-    /// Replaces the contents with plain + styled forms and returns the change count that is now ours.
-    func write(plain: String, rtf: Data?) -> Int
+    /// Replaces the contents with plain + styled forms and returns the change count that is now ours. `transient`
+    /// marks a borrowed clipboard (one paste, then given back) so clipboard managers do not record it; an explicit
+    /// Copy is the user's and is never transient.
+    func write(plain: String, rtf: Data?, transient: Bool) -> Int
     /// Puts `items` back only if the change count still equals `expected` at this instant; otherwise leaves the
     /// clipboard exactly as the other writer left it.
     func restore(_ items: PasteboardItems, ifChangeCount expected: Int) -> PasteboardRestore
@@ -25,9 +27,16 @@ enum PasteboardRestore: Equatable, Sendable {
 final class SystemPasteboard: PasteboardAccess {
     /// Larger clipboards are not copied into memory: the temporary write is refused instead.
     static let maxPreservedBytes = 8_000_000
-    private static let concealedTypes: Set<String> = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"]
+    private static let transientType = "org.nspasteboard.TransientType"
+    private static let concealedTypes: Set<String> = ["org.nspasteboard.ConcealedType", transientType]
 
-    private let board = NSPasteboard.general
+    private let board: NSPasteboard
+    /// The change count of our own transient write. While it is still current the clipboard holds only our
+    /// snippet, which is safe to snapshot; without this a paste that never confirmed would leave our transient
+    /// write in place and every later expansion would refuse, as if a password manager's secret were on it.
+    private var ownTransientChangeCount: Int?
+
+    init(board: NSPasteboard = .general) { self.board = board }
 
     var changeCount: Int { board.changeCount }
 
@@ -37,7 +46,8 @@ final class SystemPasteboard: PasteboardAccess {
         var total = 0
         var items: PasteboardItems = []
         for item in board.pasteboardItems ?? [] {
-            guard Self.concealedTypes.isDisjoint(with: item.types.map(\.rawValue)) else { return nil }
+            let concealed = board.changeCount == ownTransientChangeCount ? Self.concealedTypes.subtracting([Self.transientType]) : Self.concealedTypes
+            guard concealed.isDisjoint(with: item.types.map(\.rawValue)) else { return nil }
             var representations: [String: Data] = [:]
             for type in item.types {
                 guard let data = item.data(forType: type) else { return nil }
@@ -50,10 +60,12 @@ final class SystemPasteboard: PasteboardAccess {
         return items
     }
 
-    func write(plain: String, rtf: Data?) -> Int {
+    func write(plain: String, rtf: Data?, transient: Bool) -> Int {
         board.clearContents()
         board.setString(plain, forType: .string)
         if let rtf { board.setData(rtf, forType: .rtf) }
+        if transient { board.setData(Data(), forType: NSPasteboard.PasteboardType(Self.transientType)) }
+        ownTransientChangeCount = transient ? board.changeCount : nil
         return board.changeCount
     }
 

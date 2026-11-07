@@ -7,7 +7,7 @@ import Foundation
 
 @MainActor
 private final class InertPermissions: PermissionChecking {
-    func current() -> PermissionStatus { PermissionStatus(accessibility: false, inputMonitoring: false, postEvents: false) }
+    func current() -> PermissionStatus { PermissionStatus(accessibility: false) }
     func request() {}
 }
 
@@ -20,6 +20,7 @@ private final class InertEnvironment: InputEnvironment {
 @MainActor
 private final class InertWorkspace: WorkspaceInfo {
     var frontmostBundleID: String? { nil }
+    var frontmostPID: Int32? { nil }
 }
 
 @MainActor
@@ -41,7 +42,7 @@ private final class MemoryPasteboard: PasteboardAccess {
     func plainText() -> String? { text }
     func snapshot() -> PasteboardItems? { [] }
 
-    func write(plain: String, rtf: Data?) -> Int {
+    func write(plain: String, rtf: Data?, transient: Bool) -> Int {
         text = plain
         changeCount += 1
         return changeCount
@@ -52,7 +53,9 @@ private final class MemoryPasteboard: PasteboardAccess {
 
 @MainActor
 private final class InertKeys: PasteKeyPosting {
-    func postPaste() -> Bool { false }
+    func postPaste(toPid pid: Int32) -> Bool { false }
+    func postDeletesThenPaste(deleting count: Int, toPid pid: Int32) -> Bool { false }
+    func postLeftArrows(_ count: Int, toPid pid: Int32) -> Bool { false }
 }
 
 @MainActor

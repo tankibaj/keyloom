@@ -1,8 +1,9 @@
 import AppKit
 import ApplicationServices
 
-/// Listen-only session tap feeding `InputHost` on the main run loop. It never modifies or blocks an event and
-/// keeps no text. The callback does no Accessibility, database or cloud work (see `InputHost`).
+/// Session tap feeding `InputHost` on the main run loop. It is an active tap only because macOS gates those
+/// behind Accessibility, which Keyloom needs anyway; a listen-only tap would add an Input Monitoring grant. It
+/// returns every event unchanged, never blocks one and keeps no text. The callback does no Accessibility, database or cloud work (see `InputHost`).
 @MainActor
 final class EventTap {
     private let host: InputHost
@@ -15,13 +16,13 @@ final class EventTap {
         self.host = host
     }
 
-    /// False when macOS refuses the tap (Input Monitoring not granted).
+    /// False when macOS refuses the tap (Accessibility not granted).
     func start() -> Bool {
         guard port == nil else { return true }
         let types: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]
         let mask = types.reduce(CGEventMask(0)) { $0 | CGEventMask(1) << CGEventMask($1.rawValue) }
         guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly, eventsOfInterest: mask,
+            tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask,
             callback: eventTapCallback, userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else { return false }
         let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)

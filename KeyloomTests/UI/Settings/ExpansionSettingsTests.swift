@@ -27,32 +27,27 @@ final class ExpansionSettingsModelTests: LibraryUITestCase {
     }
 
     func testMissingPermissionsAreListedByNameAndRequestedFromAButton() {
-        harness.permissions.status = PermissionStatus(accessibility: false, inputMonitoring: true, postEvents: false)
+        harness.permissions.status = PermissionStatus(accessibility: false)
         model.refresh()
         XCTAssertTrue(model.needsPermission)
-        let rows = Dictionary(uniqueKeysWithValues: model.permissionRows.map { ($0.kind, $0) })
-        XCTAssertEqual(rows[.accessibility]?.isGranted, false)
-        XCTAssertEqual(rows[.inputMonitoring]?.isGranted, true)
-        XCTAssertEqual(rows[.pasteEvents]?.isGranted, false)
-        XCTAssertEqual(rows[.pasteEvents]?.isRequired, false, "Paste events only back the explicit rich-paste route")
+        XCTAssertEqual(model.permissionRows.map(\.title), ["Accessibility"], "Accessibility is the only permission Keyloom asks for")
+        XCTAssertEqual(model.permissionRows.first?.isGranted, false)
         model.requestPermissions()
         XCTAssertEqual(harness.permissions.requestCount, 1)
     }
 
     func testAGrantMadeInSystemSettingsAppearsAfterRefresh() {
-        harness.permissions.status = PermissionStatus(accessibility: false, inputMonitoring: false, postEvents: false)
+        harness.permissions.status = PermissionStatus(accessibility: false)
         model.refresh()
         XCTAssertTrue(model.needsPermission)
-        harness.permissions.status = PermissionStatus(accessibility: true, inputMonitoring: true, postEvents: true)
+        harness.permissions.status = PermissionStatus(accessibility: true)
         model.refresh()
         XCTAssertFalse(model.needsPermission)
     }
 
-    func testEachPermissionLinksToItsSystemSettingsPane() {
-        XCTAssertEqual(ExpansionSettingsModel.systemSettingsURL(for: .accessibility).absoluteString,
+    func testAccessibilityLinksToItsSystemSettingsPane() {
+        XCTAssertEqual(ExpansionSettingsModel.accessibilitySettingsURL.absoluteString,
                        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-        XCTAssertEqual(ExpansionSettingsModel.systemSettingsURL(for: .inputMonitoring).absoluteString,
-                       "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
     }
 
     func testExcludingAnAppReachesTheHostAndIsListedByName() {

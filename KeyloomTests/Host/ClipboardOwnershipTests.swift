@@ -87,12 +87,12 @@ final class ClipboardOwnershipTests: InsertionTestCase {
         XCTAssertEqual(destination.text, "Dear ;kl tail")
     }
 
-    func testMissingPostEventsPermissionFailsClosedBeforeAnySelectionOrClipboardWrite() async throws {
+    func testRevokedAccessibilityFailsClosedBeforeAnySelectionOrClipboardWrite() async throws {
         make()
         let target = try await bound()
-        permissions.status.postEvents = false
+        permissions.status.accessibility = false
         let outcome = await engine.insert(rendered(snippet), into: target, route: .richPaste, reactivating: false)
-        XCTAssertEqual(outcome, .failedClosed(.richUnsupported))
+        XCTAssertEqual(outcome, .failedClosed(.permissionRevoked))
         assertUntouched("Dear ;kl tail")
     }
 

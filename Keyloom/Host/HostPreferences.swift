@@ -4,6 +4,18 @@ import Foundation
 struct HostPreferences: Codable, Equatable, Sendable {
     var shortcut: ShortcutConfig = .defaultShortcut
     var excludedBundleIDs: Set<String> = []
+    /// Type over keywords in apps Accessibility cannot inspect (browsers, Electron apps, terminals).
+    var expandsInUninspectableApps = true
+
+    init() {}
+
+    /// Preferences saved before a field existed keep their other values.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        shortcut = try values.decodeIfPresent(ShortcutConfig.self, forKey: .shortcut) ?? .defaultShortcut
+        excludedBundleIDs = try values.decodeIfPresent(Set<String>.self, forKey: .excludedBundleIDs) ?? []
+        expandsInUninspectableApps = try values.decodeIfPresent(Bool.self, forKey: .expandsInUninspectableApps) ?? true
+    }
 }
 
 protocol PreferencesStoring: AnyObject {

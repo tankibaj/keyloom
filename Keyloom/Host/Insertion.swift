@@ -35,27 +35,57 @@ enum InsertionOutcome: Equatable, Sendable {
     }
 }
 
+/// Keystrokes go to one process, not to the whole session, so nothing lands in another app if focus moves
+/// between the last check and the post.
 @MainActor
 protocol PasteKeyPosting: AnyObject {
     /// Posts Command-V tagged with `OwnEvents.marker`. False when it could not be posted.
-    func postPaste() -> Bool
+    func postPaste(toPid pid: Int32) -> Bool
+    /// Posts `count` Delete presses and then Command-V as one unit: every event is built before the first is
+    /// posted, so a failure never leaves the keyword deleted with nothing pasted. False when nothing was posted.
+    func postDeletesThenPaste(deleting count: Int, toPid pid: Int32) -> Bool
+    /// Posts `count` Left Arrow presses, tagged like `postPaste`.
+    func postLeftArrows(_ count: Int, toPid pid: Int32) -> Bool
 }
 
 @MainActor
 final class SystemPasteKeys: PasteKeyPosting {
     private static let keyCodeV: CGKeyCode = 9
+    private static let keyCodeDelete: CGKeyCode = 51
+    private static let keyCodeLeftArrow: CGKeyCode = 123
 
     // TODO(keyloom-mvp): key code 9 is "V" on ANSI/QWERTZ; verify on layouts that remap Command shortcuts, when the live walk covers them.
-    func postPaste() -> Bool {
-        guard let source = CGEventSource(stateID: .combinedSessionState),
-              let down = CGEvent(keyboardEventSource: source, virtualKey: Self.keyCodeV, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: Self.keyCodeV, keyDown: false)
-        else { return false }
-        for event in [down, up] {
-            event.flags = .maskCommand
-            event.setIntegerValueField(.eventSourceUserData, value: OwnEvents.marker)
-            event.post(tap: .cgSessionEventTap)
+    func postPaste(toPid pid: Int32) -> Bool { post(Self.presses(Self.keyCodeV, flags: .maskCommand, count: 1), to: pid) }
+    func postLeftArrows(_ count: Int, toPid pid: Int32) -> Bool {
+        post(Self.presses(Self.keyCodeLeftArrow, flags: [], count: count), to: pid)
+    }
+
+    func postDeletesThenPaste(deleting count: Int, toPid pid: Int32) -> Bool {
+        post(Self.presses(Self.keyCodeDelete, flags: [], count: count).flatMap { deletes in
+            Self.presses(Self.keyCodeV, flags: .maskCommand, count: 1).map { deletes + $0 }
+        }, to: pid)
+    }
+
+    /// Down and up events for `count` presses, tagged as ours; nil when any could not be created.
+    private static func presses(_ keyCode: CGKeyCode, flags: CGEventFlags, count: Int) -> [CGEvent]? {
+        guard let source = CGEventSource(stateID: .combinedSessionState) else { return nil }
+        var events: [CGEvent] = []
+        for _ in 0..<count {
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+            else { return nil }
+            for event in [down, up] {
+                event.flags = flags
+                event.setIntegerValueField(.eventSourceUserData, value: OwnEvents.marker)
+                events.append(event)
+            }
         }
+        return events
+    }
+
+    private func post(_ events: [CGEvent]?, to pid: Int32) -> Bool {
+        guard let events else { return false }
+        for event in events { event.postToPid(pid) }
         return true
     }
 }
@@ -95,7 +125,7 @@ final class InsertionEngine {
 
     /// Explicit user Copy: plain + styled on the clipboard, which is then the user's. Never restored.
     func copy(_ rendered: RenderedSnippet) -> InsertionOutcome {
-        _ = pasteboard.write(plain: rendered.plainText, rtf: rendered.rtfData())
+        _ = pasteboard.write(plain: rendered.plainText, rtf: rendered.rtfData(), transient: false)
         return .copied
     }
 
@@ -126,7 +156,6 @@ final class InsertionEngine {
     // MARK: Rich (explicit paste route)
 
     private func pasteRich(_ rendered: RenderedSnippet, into target: BoundTarget, reactivating: Bool) async -> InsertionOutcome {
-        guard permissions.current().postEvents else { return .failedClosed(.richUnsupported) }
         if let refusal = await binder.revalidate(target, reactivating: reactivating) { return .init(refusal) }
         guard !Task.isCancelled else { return .aborted(.cancelled) }
         // Snapshot only now, after every await: a copy made while we waited is the user's clipboard to restore,
@@ -149,14 +178,14 @@ final class InsertionEngine {
             restoreCaret(of: target)
             return .failedClosed(.richUnsupported)
         }
-        let ours = pasteboard.write(plain: rendered.plainText, rtf: rendered.rtfData())
+        let ours = pasteboard.write(plain: rendered.plainText, rtf: rendered.rtfData(), transient: true)
         // The last instant before the keystroke: still the same field, same selection, nothing revoked.
         if let refusal = lastInstantRefusal(armed) {
             _ = giveBack(saved, ours)
             restoreCaret(of: target)
             return .init(refusal)
         }
-        guard keys.postPaste() else {
+        guard keys.postPaste(toPid: target.snapshot.token.pid) else {
             _ = giveBack(saved, ours)
             restoreCaret(of: target)
             return .aborted(.writeFailed)

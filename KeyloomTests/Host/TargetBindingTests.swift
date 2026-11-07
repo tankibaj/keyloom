@@ -215,7 +215,7 @@ final class TargetBindingTests: XCTestCase {
         var refusal = await binder.revalidate(target, reactivating: true)
         XCTAssertEqual(refusal, .failedClosed(.secureInput))
         environment.isSecureInputActive = false
-        permissions.status.inputMonitoring = false
+        permissions.status.accessibility = false
         refusal = await binder.revalidate(target, reactivating: true)
         XCTAssertEqual(refusal, .failedClosed(.permissionRevoked))
         XCTAssertEqual(destination.activateCount, 0)

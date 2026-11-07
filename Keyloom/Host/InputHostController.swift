@@ -1,10 +1,11 @@
 import AppKit
 import Observation
+import os
 
 @MainActor
 protocol EventTapControlling: AnyObject {
     var isRunning: Bool { get }
-    /// False when macOS refuses the tap (Input Monitoring not granted).
+    /// False when macOS refuses the tap (Accessibility not granted).
     func start() -> Bool
     func stop()
 }
@@ -39,6 +40,7 @@ struct HostStatus: Equatable, Sendable {
     var counters = InputHost.Counters()
     var clipboardRestoresSkipped = 0
     var usageRecordFailures = 0
+    var expandsInUninspectableApps = true
 }
 
 /// Every OS boundary the host touches, so the whole host runs against fakes in tests.
@@ -82,6 +84,8 @@ struct HostDependencies {
 @MainActor
 @Observable
 final class InputHostController {
+    private static let log = Logger(subsystem: "com.thenaim.keyloom", category: "expansion")
+
     private(set) var status: HostStatus
 
     @ObservationIgnored let inputHost: InputHost
@@ -95,6 +99,7 @@ final class InputHostController {
     @ObservationIgnored private let binder: TargetBinder
     @ObservationIgnored private let engine: InsertionEngine
     @ObservationIgnored private let coordinator: ExpansionCoordinator
+    @ObservationIgnored private let keystrokes: KeystrokeInserter
     @ObservationIgnored private var shortcuts: ShortcutManager!
     @ObservationIgnored private var userExcluded: Set<String>
     @ObservationIgnored private var copyOffer: RenderedSnippet?
@@ -111,7 +116,7 @@ final class InputHostController {
         self.picker = picker
         let saved = preferences.load()
         userExcluded = saved.excludedBundleIDs
-        status = HostStatus(permissions: dependencies.permissions.current())
+        status = HostStatus(permissions: dependencies.permissions.current(), expandsInUninspectableApps: saved.expandsInUninspectableApps)
         inputHost = InputHost(matcher: library.keywordMatcher, environment: dependencies.environment, workspace: dependencies.workspace)
         tap = dependencies.makeTap(inputHost)
         let settle = dependencies.settle
@@ -122,16 +127,24 @@ final class InputHostController {
         engine = InsertionEngine(binder: binder, destination: dependencies.destination, permissions: dependencies.permissions,
                                  pasteboard: dependencies.pasteboard, keys: dependencies.keys, settle: settle)
         let pasteboard = dependencies.pasteboard
-        coordinator = ExpansionCoordinator(library: library, binder: binder, engine: engine, prompter: prompter) {
+        keystrokes = KeystrokeInserter(
+            destination: dependencies.destination, environment: dependencies.environment, workspace: dependencies.workspace,
+            permissions: dependencies.permissions, pasteboard: pasteboard, keys: dependencies.keys,
+            excludedBundleIDs: exclusions, settle: settle)
+        coordinator = ExpansionCoordinator(library: library, binder: binder, engine: engine, prompter: prompter,
+                                           keystrokes: keystrokes) {
             Self.renderEnvironment(pasteboard: pasteboard)
         }
         coordinator.onUsageRecordFailed = { [weak self] in self?.status.usageRecordFailures += 1 }
         inputHost.excludedBundleIDs = userExcluded.union(ownBundleID.map { [$0] } ?? [])
         inputHost.onMatch = { [weak self] match in self?.begin(match) }
-        engine.onClipboardOutcome = { [weak self] outcome in
+        let countSkippedRestore: (ClipboardOutcome) -> Void = { [weak self] outcome in
             guard let self, outcome != .restored else { return }
             status.clipboardRestoresSkipped += 1
         }
+        keystrokes.isEnabled = saved.expandsInUninspectableApps
+        engine.onClipboardOutcome = countSkippedRestore
+        keystrokes.onClipboardOutcome = countSkippedRestore
         shortcuts = ShortcutManager(registrar: dependencies.hotKeys) { [weak self] in self?.openPicker() }
     }
 
@@ -207,6 +220,16 @@ final class InputHostController {
 
     var excludedBundleIDs: Set<String> { userExcluded }
 
+    /// Whether keywords are typed over in apps Accessibility cannot inspect.
+    func setExpandsInUninspectableApps(_ enabled: Bool) {
+        keystrokes.isEnabled = enabled
+        status.expandsInUninspectableApps = enabled
+        cancelExpansion()
+        var saved = preferences.load()
+        saved.expandsInUninspectableApps = enabled
+        preferences.save(saved)
+    }
+
     /// The result says whether it registered, conflicts with another app, or failed; the shortcut is saved either way.
     @discardableResult
     func setShortcut(_ config: ShortcutConfig) -> ShortcutState {
@@ -273,20 +296,28 @@ final class InputHostController {
         inputHost.invalidate()
     }
 
+    /// Keys, clicks and app switches seen since start. While an expansion runs, every one of them is a reason for
+    /// the keystroke route not to touch the field.
+    private var activity: Int {
+        let counters = inputHost.counters
+        return counters.suppressedInactive + counters.syntheticIgnored + counters.invalidations
+    }
+
     private func begin(_ match: KeywordMatch) {
         suspend()
+        let baseline = activity
         expansionTask = Task { [weak self] in
             guard let self else { return }
-            await process(match)
+            await process(match, baseline: baseline)
         }
     }
 
-    private func process(_ match: KeywordMatch) async {
+    private func process(_ match: KeywordMatch, baseline: Int) async {
         defer {
             resume()
             expansionTask = nil
         }
-        publish(await coordinator.handle(match))
+        publish(await coordinator.handle(match, interrupted: { [unowned self] in activity != baseline }))
     }
 
     /// Resolves once usage writes started by finished insertions have completed (they run after the host resumes).
@@ -295,6 +326,8 @@ final class InputHostController {
     private func cancelExpansion() { expansionTask?.cancel() }
 
     private func publish(_ result: ExpansionResult) {
+        // Outcome names only (enum cases), never text: how a refusal in another app can be told apart afterwards.
+        Self.log.info("expansion outcome: \(String(describing: result.outcome), privacy: .public)")
         status.lastOutcome = result.outcome
         copyOffer = result.copyOffer
         status.hasCopyOffer = result.copyOffer != nil

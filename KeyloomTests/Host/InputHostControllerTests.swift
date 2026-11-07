@@ -27,7 +27,7 @@ final class InputHostControllerTests: StoreTestCase {
         environment = FakeInputEnvironment()
         workspace = FakeWorkspace()
         permissions = FakePermissions()
-        permissions.status = PermissionStatus(accessibility: granted, inputMonitoring: granted, postEvents: granted)
+        permissions.status = PermissionStatus(accessibility: granted)
         pasteboard = FakePasteboard(userClipboard: "user clipboard")
         hotKeys = FakeHotKeys()
         tap = FakeTap()
@@ -39,7 +39,7 @@ final class InputHostControllerTests: StoreTestCase {
         let dependencies = HostDependencies(
             destination: destination, pasteboard: pasteboard, keys: FakePasteKeys(), permissions: permissions,
             environment: environment, workspace: workspace, hotKeys: hotKeys, makeTap: { [unowned self] _ in tap },
-            settle: { _ in }, ownBundleID: "app.keyloom.Keyloom", permissionPollInterval: nil)
+            settle: { _ in }, ownBundleID: "com.thenaim.keyloom", permissionPollInterval: nil)
         controller = InputHostController(library: library, prompter: prompter, picker: picker, preferences: preferences,
                                          dependencies: dependencies)
     }
@@ -58,11 +58,11 @@ final class InputHostControllerTests: StoreTestCase {
         try await setUpController(granted: false)
         controller.start()
         XCTAssertFalse(tap.isRunning)
-        XCTAssertEqual(controller.status.permissions, PermissionStatus(accessibility: false, inputMonitoring: false, postEvents: false))
+        XCTAssertEqual(controller.status.permissions, PermissionStatus(accessibility: false))
         XCTAssertFalse(controller.status.isTapRunning)
         controller.requestPermissions()
         XCTAssertEqual(permissions.requestCount, 1)
-        permissions.status = PermissionStatus(accessibility: true, inputMonitoring: true, postEvents: true)
+        permissions.status = PermissionStatus(accessibility: true)
         controller.refreshPermissions()
         XCTAssertTrue(tap.isRunning)
         XCTAssertTrue(controller.status.isTapRunning)
@@ -86,13 +86,22 @@ final class InputHostControllerTests: StoreTestCase {
         try await setUpController()
         controller.start()
         controller.setExcludedBundleIDs(["com.example.Terminal"])
-        XCTAssertEqual(controller.inputHost.excludedBundleIDs, ["com.example.Terminal", "app.keyloom.Keyloom"], "Keyloom never expands in itself")
+        XCTAssertEqual(controller.inputHost.excludedBundleIDs, ["com.example.Terminal", "com.thenaim.keyloom"], "Keyloom never expands in itself")
         controller.setPaused(true)
         XCTAssertTrue(controller.status.isPaused)
         type(";sig")
         XCTAssertNil(controller.expansionTask)
         controller.setPaused(false)
         XCTAssertEqual(preferences.load().excludedBundleIDs, ["com.example.Terminal"])
+    }
+
+    func testTheUninspectableAppsSwitchDefaultsOnPersistsAndShowsInStatus() async throws {
+        try await setUpController()
+        controller.start()
+        XCTAssertTrue(controller.status.expandsInUninspectableApps)
+        controller.setExpandsInUninspectableApps(false)
+        XCTAssertFalse(controller.status.expandsInUninspectableApps)
+        XCTAssertFalse(preferences.load().expandsInUninspectableApps)
     }
 
     // MARK: Typed expansion

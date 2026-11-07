@@ -37,25 +37,33 @@ final class ExpansionCoordinator {
     private let engine: InsertionEngine
     private let prompter: ArgumentPrompting
     private let environment: @MainActor () -> RenderEnvironment
+    /// Types over keywords in fields Accessibility cannot drive. Nil leaves those refused with Copy offered.
+    private let keystrokes: KeystrokeInserter?
     /// Called when a usage write fails, after an insertion that already succeeded.
     var onUsageRecordFailed: (@MainActor () -> Void)?
     /// Usage writes run one after another off the resume path; each waits for the one before it.
     private var usageRecording: Task<Void, Never>?
 
     init(library: SnippetLibrary, binder: TargetBinder, engine: InsertionEngine, prompter: ArgumentPrompting,
-         environment: @escaping @MainActor () -> RenderEnvironment) {
+         keystrokes: KeystrokeInserter? = nil, environment: @escaping @MainActor () -> RenderEnvironment) {
         self.library = library
         self.binder = binder
         self.engine = engine
         self.prompter = prompter
+        self.keystrokes = keystrokes
         self.environment = environment
     }
 
-    func handle(_ match: KeywordMatch) async -> ExpansionResult {
+    /// `interrupted` says whether anything was typed, clicked or switched since the match; the keystroke route
+    /// cannot read the field, so it gives up when that is true.
+    func handle(_ match: KeywordMatch, interrupted: @MainActor () -> Bool = { false }) async -> ExpansionResult {
         let target: BoundTarget
         switch await binder.bindKeyword(match) {
         case .success(let bound): target = bound
         case .failure(let refusal):
+            if case .failedClosed(let reason) = refusal, keystrokes?.accepts(reason) == true {
+                return await typeOver(match, refused: refusal, interrupted: interrupted)
+            }
             let outcome = InsertionOutcome(refusal)
             return ExpansionResult(outcome: outcome, copyOffer: outcome.allowsCopyOffer ? await renderWithoutPrompt(match) : nil)
         }
@@ -78,7 +86,23 @@ final class ExpansionCoordinator {
         } catch {
             return ExpansionResult(outcome: .failedClosed(.argumentsIncomplete))
         }
-        let outcome = await engine.insert(rendered, into: target, route: .plain, reactivating: prompted)
+        var outcome = await engine.insert(rendered, into: target, route: .plain, reactivating: prompted)
+        // An app that refused or ignored the write left the field as bound; typing over the keyword may still work.
+        // After a prompt the app was switched away and back, which the interruption check cannot tell from the user's.
+        if !prompted, let keystrokes, case .aborted(let reason) = outcome, reason == .writeFailed || reason == .writeUnconfirmed,
+           await keystrokes.accepts(afterFailedWriteTo: target) {
+            outcome = await keystrokes.insert(rendered, replacing: match, interrupted: interrupted)
+        }
+        return await finish(outcome, rendered: rendered, snippetID: match.snippetID)
+    }
+
+    /// A field Accessibility cannot see: no prompt (the field cannot be checked after one), so a snippet that
+    /// needs answers stays refused.
+    private func typeOver(_ match: KeywordMatch, refused: Refusal, interrupted: @MainActor () -> Bool) async -> ExpansionResult {
+        guard let keystrokes, let rendered = await renderWithoutPrompt(match) else {
+            return ExpansionResult(outcome: InsertionOutcome(refused))
+        }
+        let outcome = await keystrokes.insert(rendered, replacing: match, interrupted: interrupted)
         return await finish(outcome, rendered: rendered, snippetID: match.snippetID)
     }
 

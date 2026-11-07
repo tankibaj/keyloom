@@ -5,16 +5,13 @@ import Observation
 /// Only counts, names and states are shown; no typed text exists here.
 @MainActor @Observable
 final class ExpansionSettingsModel {
-    enum PermissionKind: Hashable { case accessibility, inputMonitoring, pasteEvents }
-
     struct PermissionRow: Identifiable, Equatable {
-        let kind: PermissionKind
         let title: String
         let detail: String
         let isGranted: Bool
         /// Expansion cannot work without it.
         let isRequired: Bool
-        var id: PermissionKind { kind }
+        var id: String { title }
     }
 
     struct ExcludedApp: Identifiable, Equatable {
@@ -40,18 +37,17 @@ final class ExpansionSettingsModel {
         set { host.setPaused(newValue) }
     }
 
+    var expandsInUninspectableApps: Bool {
+        get { host.status.expandsInUninspectableApps }
+        set { host.setExpandsInUninspectableApps(newValue) }
+    }
+
     var permissionRows: [PermissionRow] {
         let granted = host.status.permissions
         return [
-            PermissionRow(kind: .accessibility, title: "Accessibility",
-                          detail: "Lets Keyloom read the field you are typing in and replace the keyword with the snippet.",
+            PermissionRow(title: "Accessibility",
+                          detail: "Lets Keyloom notice a keyword as you type it and replace it with the snippet. Keys are matched in memory and never stored.",
                           isGranted: granted.accessibility, isRequired: true),
-            PermissionRow(kind: .inputMonitoring, title: "Input Monitoring",
-                          detail: "Lets Keyloom notice a keyword as you type it. Keys are matched in memory and never stored.",
-                          isGranted: granted.inputMonitoring, isRequired: true),
-            PermissionRow(kind: .pasteEvents, title: "Post Events (optional)",
-                          detail: "Only needed to insert styled text with the explicit rich-paste route.",
-                          isGranted: granted.postEvents, isRequired: false),
         ]
     }
 
@@ -97,14 +93,7 @@ final class ExpansionSettingsModel {
         host.setExcludedBundleIDs(excludedIDs)
     }
 
-    static func systemSettingsURL(for kind: PermissionKind) -> URL {
-        let pane = switch kind {
-        case .accessibility: "Privacy_Accessibility"
-        case .inputMonitoring: "Privacy_ListenEvent"
-        case .pasteEvents: "Privacy_Accessibility"
-        }
-        return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!
-    }
+    static let accessibilitySettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
 
     static func systemAppName(for bundleID: String) -> String? {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
