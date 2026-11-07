@@ -22,6 +22,13 @@ final class TargetBindingTests: XCTestCase {
                               settle: { [unowned self] _ in settles += 1; onSettle?() })
     }
 
+    /// The two settled reads are the only guard against binding a keyword one key early (a prefix-shifted range
+    /// that deletes the user's own text): the second read happens `2 * settleInterval` after the tap saw the key.
+    /// Shortening the interval shortens that margin, so it is pinned here, not tuned for speed.
+    func testTwoSettledReadsKeepAtLeastFiftyMillisecondsOfMarginAfterTheKey() {
+        XCTAssertGreaterThanOrEqual(2 * TargetBinder.settleInterval, 0.05)
+    }
+
     private func match(_ keyword: String = ";kl", typed: Int? = nil) -> KeywordMatch {
         KeywordMatch(snippetID: UUID(), keyword: keyword, typedUTF16Length: typed ?? keyword.utf16.count)
     }

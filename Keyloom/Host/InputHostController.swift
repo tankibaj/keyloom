@@ -125,6 +125,7 @@ final class InputHostController {
         coordinator = ExpansionCoordinator(library: library, binder: binder, engine: engine, prompter: prompter) {
             Self.renderEnvironment(pasteboard: pasteboard)
         }
+        coordinator.onUsageRecordFailed = { [weak self] in self?.status.usageRecordFailures += 1 }
         inputHost.excludedBundleIDs = userExcluded.union(ownBundleID.map { [$0] } ?? [])
         inputHost.onMatch = { [weak self] match in self?.begin(match) }
         engine.onClipboardOutcome = { [weak self] outcome in
@@ -288,13 +289,15 @@ final class InputHostController {
         publish(await coordinator.handle(match))
     }
 
+    /// Resolves once usage writes started by finished insertions have completed (they run after the host resumes).
+    func waitForUsageRecording() async { await coordinator.waitForUsageRecording() }
+
     private func cancelExpansion() { expansionTask?.cancel() }
 
     private func publish(_ result: ExpansionResult) {
         status.lastOutcome = result.outcome
         copyOffer = result.copyOffer
         status.hasCopyOffer = result.copyOffer != nil
-        if result.usageRecordFailed { status.usageRecordFailures += 1 }
         publishState()
     }
 

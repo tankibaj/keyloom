@@ -80,6 +80,41 @@ final class PerformanceTests: PerfTestCase {
         await library.close()
     }
 
+    /// The host stays suspended until `finish` returns, so keystrokes typed meanwhile are dropped: recording usage
+    /// must not reload (re-decode and re-index) the 1,000-snippet library, and must not hold `finish` up.
+    func testFinishingAnExpansionNeitherReloadsNorWaitsForTheUsageWrite() async throws {
+        let (library, _) = try await openFixtureLibrary()
+        let environment = renderEnvironment()
+        let coordinator = await MainActor.run {
+            let destination = FakeDestination(prefix: "", typed: "", suffix: "")
+            let permissions = FakePermissions()
+            let settle: (TimeInterval) async -> Void = { _ in }
+            let binder = TargetBinder(destination: destination, environment: FakeInputEnvironment(), permissions: permissions,
+                                      excludedBundleIDs: { [] }, settle: settle)
+            let engine = InsertionEngine(binder: binder, destination: destination, permissions: permissions,
+                                         pasteboard: FakePasteboard(userClipboard: ""), keys: FakePasteKeys(), settle: settle)
+            return ExpansionCoordinator(library: library, binder: binder, engine: engine, prompter: FakePrompter(),
+                                        environment: { environment })
+        }
+        let snippets = await library.allSnippets()
+        let rendered = RenderedSnippet(segments: [StyledSegment(text: "x", style: [])], plainText: "x", cursorOffset: nil)
+        let reloadsBefore = await library.reloadCount
+
+        let milliseconds = await samples(sampleCount) { index in
+            _ = await coordinator.finish(.replaced(mode: .plain, verified: true, clipboard: .notTouched), rendered: rendered,
+                                         snippetID: snippets[index % snippets.count].id)
+        }
+        await coordinator.waitForUsageRecording()
+
+        let reloadsAfter = await library.reloadCount
+        XCTAssertEqual(reloadsAfter, reloadsBefore, "no full reload per expansion")
+        let recent = await library.search(query: "", filter: .recentlyUsed)
+        guard case .results(let used) = recent else { return XCTFail("usage must be visible in memory") }
+        XCTAssertEqual(used.count, sampleCount, "each sampled snippet shows as recently used")
+        report("finish-expansion-resume", milliseconds, budgetMilliseconds: 5)
+        await library.close()
+    }
+
     func testStoreOpenAndIndexLoad() async throws {
         let (first, directory) = try await openFixtureLibrary()
         await first.close()

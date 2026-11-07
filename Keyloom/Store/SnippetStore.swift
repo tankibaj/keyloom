@@ -232,12 +232,16 @@ actor SnippetStore {
 
     // MARK: Usage
 
-    func recordUsage(id: UUID) throws {
+    /// Returns the stored `last_used_at`.
+    @discardableResult
+    func recordUsage(id: UUID) throws -> Date {
         try write { db in
+            let usedAt = now()
             let changed = try db.run("""
             UPDATE snippets SET last_used_at = ?, use_count = use_count + 1 WHERE id = ? AND deleted_at IS NULL
-            """, [.date(now()), .uuid(id)])
+            """, [.date(usedAt), .uuid(id)])
             if changed == 0 { throw StoreError.notFound(id: id) }
+            return usedAt
         }
     }
 

@@ -34,7 +34,7 @@ struct SearchStats: Sendable {
 /// snippets that carry every selected tag (AND), compared case- and diacritic-insensitively.
 struct SearchIndex: Sendable {
     private struct Entry: Sendable {
-        let snippet: Snippet
+        var snippet: Snippet
         let name: String
         let keyword: String
         let tags: [String]
@@ -42,7 +42,7 @@ struct SearchIndex: Sendable {
         let body: String
     }
 
-    private let entries: [Entry]
+    private var entries: [Entry]
 
     init(snippets: [Snippet]) {
         entries = snippets.map { snippet in
@@ -50,6 +50,12 @@ struct SearchIndex: Sendable {
             return Entry(snippet: snippet, name: Self.fold(snippet.name), keyword: Self.fold(snippet.keyword ?? ""),
                          tags: tags, joinedTags: tags.joined(separator: "\n"), body: Self.fold(snippet.template.plainText))
         }
+    }
+
+    /// Usage is device-local metadata outside every searched field, so it is patched in place instead of rebuilding.
+    mutating func setLastUsedAt(_ date: Date, for id: UUID) {
+        guard let offset = entries.firstIndex(where: { $0.snippet.id == id }) else { return }
+        entries[offset].snippet.lastUsedAt = date
     }
 
     func search(query: String, tags: Set<String> = []) -> SearchOutcome {

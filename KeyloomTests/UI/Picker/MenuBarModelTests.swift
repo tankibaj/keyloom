@@ -65,6 +65,7 @@ final class MenuBarModelTests: PickerTestCase {
         try await makeMenu { seeded = try await self.seed($0, "Hello", body: "Hello", pinned: true) }
         await menu.insert(seeded.id)
         XCTAssertEqual(harness.destination.text, "Dear Hello tail")
+        await harness.controller.waitForUsageRecording()
         let used = await library.snippet(id: seeded.id)?.lastUsedAt
         XCTAssertNotNil(used)
         XCTAssertTrue(panel.shown.isEmpty, "No picker window opens for a menu insert")

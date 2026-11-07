@@ -157,6 +157,7 @@ final class PickerActionTests: PickerTestCase {
         XCTAssertEqual(harness.destination.text, "Dear Hello tail")
         XCTAssertEqual(panel.hideCount, 1)
         XCTAssertEqual(harness.controller.status.lastOutcome, .replaced(mode: .plain, verified: true, clipboard: .notTouched))
+        await harness.controller.waitForUsageRecording()
         let used = await library.snippet(id: seeded.id)?.lastUsedAt
         XCTAssertNotNil(used, "The picker records usage through the host insert path")
         XCTAssertEqual(harness.pasteboard.plain, UIHostHarness.userClipboard, "Plain insertion never touches the clipboard")

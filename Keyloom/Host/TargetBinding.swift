@@ -35,6 +35,11 @@ struct BoundTarget: Equatable, Sendable {
 final class TargetBinder {
     /// The tap sees a key before the destination has applied it.
     static let maxSettleAttempts = 20
+    /// Two settled reads must agree, so the earliest possible bind is `2 * settleInterval` (50 ms) after the key,
+    /// plus two Accessibility reads. That floor is the safety margin itself: a bind from two reads both taken
+    /// before the app applied the key is the prefix-shifted range that deletes the user's own text, so a shorter
+    /// interval, or a read with no settle before it, shrinks the lag the check survives. Analytical figure,
+    /// NOT VERIFIED against a live app. Pinned by `TargetBindingTests`.
     static let settleInterval: TimeInterval = 0.025
     private static let supportedRoles: Set<String> = ["AXTextArea", "AXTextField"]
 

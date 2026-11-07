@@ -12,6 +12,7 @@ final class ExpansionFlowTests: StoreTestCase {
     private var prompter: FakePrompter!
     private var coordinator: ExpansionCoordinator!
     private var excluded: Set<String> = []
+    private var usageFailures = 0
 
     private func setUpFlow(prefix: String = "Dear ", typed: String, suffix: String = " tail") async throws {
         let url = try makeDirectory().appendingPathComponent("keyloom.sqlite")
@@ -23,6 +24,7 @@ final class ExpansionFlowTests: StoreTestCase {
         pasteboard = FakePasteboard(userClipboard: "user clipboard")
         prompter = FakePrompter()
         excluded = []
+        usageFailures = 0
         let settle: (TimeInterval) async -> Void = { _ in }
         let binder = TargetBinder(destination: destination, environment: environment, permissions: permissions,
                                   excludedBundleIDs: { [unowned self] in excluded }, settle: settle)
@@ -30,6 +32,7 @@ final class ExpansionFlowTests: StoreTestCase {
                                      keys: FakePasteKeys(), settle: settle)
         coordinator = ExpansionCoordinator(library: library, binder: binder, engine: engine, prompter: prompter,
                                            environment: { Self.renderEnvironment })
+        coordinator.onUsageRecordFailed = { [unowned self] in usageFailures += 1 }
         addTeardownBlock { [library] in await library?.close() }
     }
 
@@ -48,7 +51,11 @@ final class ExpansionFlowTests: StoreTestCase {
         return library.keywordMatcher.feed(typed)!
     }
 
-    private func usage(_ id: UUID) async -> Date? { await library.snippet(id: id)?.lastUsedAt }
+    /// Usage is written off the resume path, so wait for the write before reading it back.
+    private func usage(_ id: UUID) async -> Date? {
+        await coordinator.waitForUsageRecording()
+        return await library.snippet(id: id)?.lastUsedAt
+    }
 
     private let followUp = "Hi {argument name=\"recipient\"},\n\nthanks for {date format=\"yyyy-MM-dd\"}.\n\nBest{cursor}"
 
@@ -61,8 +68,38 @@ final class ExpansionFlowTests: StoreTestCase {
         XCTAssertEqual(destination.selection, NSRange(location: 9, length: 0))
         let used = await usage(snippet.id)
         XCTAssertNotNil(used)
-        XCTAssertFalse(result.usageRecordFailed)
+        XCTAssertEqual(usageFailures, 0)
         XCTAssertEqual(prompter.requests.count, 0)
+    }
+
+    func testUsageIsRecordedInOrderWithoutAReloadAndWithoutBlockingTheInsertion() async throws {
+        try await setUpFlow(typed: ";sig")
+        let snippet = try await addSnippet(";sig", "Best")
+        let rendered = RenderedSnippet(segments: [StyledSegment(text: "Best", style: [])], plainText: "Best", cursorOffset: nil)
+        let reloadsBefore = await library.reloadCount
+        for _ in 0..<3 {
+            let result = await coordinator.finish(.replaced(mode: .plain, verified: true, clipboard: .notTouched),
+                                                  rendered: rendered, snippetID: snippet.id)
+            XCTAssertEqual(result.outcome, .replaced(mode: .plain, verified: true, clipboard: .notTouched))
+        }
+        await coordinator.waitForUsageRecording()
+        let reloadsAfter = await library.reloadCount
+        XCTAssertEqual(reloadsAfter, reloadsBefore, "recording usage never reloads the library")
+        let stored = try await library.store.usage(of: snippet.id)
+        XCTAssertEqual(stored.useCount, 3)
+        let remembered = await library.snippet(id: snippet.id)
+        XCTAssertEqual(remembered?.lastUsedAt, stored.lastUsedAt)
+        XCTAssertEqual(usageFailures, 0)
+    }
+
+    func testAFailedUsageWriteIsReportedAndDoesNotFailTheInsertion() async throws {
+        try await setUpFlow(typed: ";sig")
+        let rendered = RenderedSnippet(segments: [StyledSegment(text: "Best", style: [])], plainText: "Best", cursorOffset: nil)
+        let result = await coordinator.finish(.replaced(mode: .plain, verified: true, clipboard: .notTouched),
+                                              rendered: rendered, snippetID: UUID())
+        XCTAssertEqual(result.outcome, .replaced(mode: .plain, verified: true, clipboard: .notTouched))
+        await coordinator.waitForUsageRecording()
+        XCTAssertEqual(usageFailures, 1)
     }
 
     func testFollowUpTemplatePromptsThenReplacesAndPlacesCaretAtMarker() async throws {
@@ -120,7 +157,7 @@ final class ExpansionFlowTests: StoreTestCase {
         let result = await coordinator.handle(match(";sig"))
         XCTAssertEqual(result.outcome, .aborted(.writeUnconfirmed))
         XCTAssertEqual(result.copyOffer?.plainText, "Best")
-        XCTAssertFalse(result.usageRecordFailed)
+        XCTAssertEqual(usageFailures, 0)
         let used = await usage(snippet.id)
         XCTAssertNil(used)
         XCTAssertEqual(pasteboard.writeCount, 0)
