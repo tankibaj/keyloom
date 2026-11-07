@@ -21,8 +21,6 @@ struct KeyloomApp: App {
                     environment.model.quitAction = { NSApp.terminate(nil) }
                 }
         }
-        // With a MenuBarExtra scene present SwiftUI no longer opens the first window by itself.
-        .defaultLaunchBehavior(.presented)
         .commands { LibraryCommands(model: environment.model) }
         MenuBarExtra {
             if let menuBar = environment.services?.menuBar {
