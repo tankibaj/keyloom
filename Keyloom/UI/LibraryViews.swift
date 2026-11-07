@@ -230,7 +230,7 @@ struct SnippetListView: View {
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
-        List(selection: Binding<UUID?>(get: { library.selection }, set: select)) {
+        List(selection: Binding<UUID?>(get: { library.selection }, set: { select($0) })) {
             if library.sidebarItem == .recentlyDeleted {
                 ForEach(library.deletedRows) { row in DeletedRowView(row: row, library: library) }
             } else {
