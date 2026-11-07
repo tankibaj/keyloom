@@ -22,6 +22,7 @@ final class AppEnvironment {
         let host: InputHostController
         let picker: PickerCoordinator
         let menuBar: MenuBarModel
+        let settings: SettingsModels
     }
 
     let model: AppModel
@@ -56,6 +57,15 @@ final class AppEnvironment {
                                        dependencies: mode == .live ? .system() : .uiTest())
         picker.attach(host)
         host.start()
-        services = Services(host: host, picker: picker, menuBar: MenuBarModel(library: library, host: host, picker: picker))
+        let settings = SettingsModels(
+            appearance: AppearanceSettings(defaults: defaults), shortcut: ShortcutSettingsModel(host: host),
+            expansion: ExpansionSettingsModel(host: host),
+            backups: SyncBackupsModel(library: library, snapshots: model.snapshots),
+            // TODO(keyloom-wp5-integrate): bind the CKSyncEngine-backed provider here when Keyloom/Sync merges.
+            sync: LocalOnlySyncSettings(defaults: defaults),
+            assistance: WritingAssistanceSettingsModel(policy: WritingAssistancePolicy(defaults: defaults)))
+        settings.appearance.applyCurrent()
+        services = Services(host: host, picker: picker, menuBar: MenuBarModel(library: library, host: host, picker: picker),
+                            settings: settings)
     }
 }

@@ -30,6 +30,23 @@ final class AppEnvironmentTests: LibraryUITestCase {
         XCTAssertEqual(first.host.status.shortcut, .registered(.defaultShortcut))
     }
 
+    func testSettingsShareTheEnvironmentDefaultsAndTheSyncSeamStartsLocalOnly() async throws {
+        let defaults = try isolatedDefaults()
+        let environment = AppEnvironment(model: AppModel(dataDirectory: try makeDirectory()), mode: .uiTest, defaults: defaults)
+        await environment.start()
+        let settings = try XCTUnwrap(environment.services?.settings)
+        XCTAssertEqual(settings.sync.status, .off)
+        settings.assistance.assistanceEnabled = true
+        XCTAssertTrue(defaults.bool(forKey: WritingAssistancePolicy.assistanceKey))
+        settings.sync.setEnabled(true)
+        XCTAssertTrue(defaults.bool(forKey: LocalOnlySyncSettings.key))
+        XCTAssertTrue(Set([LocalOnlySyncSettings.key]).isDisjoint(with: WritingAssistancePolicy.localOnlyKeys),
+                      "Per-device assistance keys are never part of the sync switch's state")
+        settings.appearance.preference = .dark
+        XCTAssertEqual(defaults.string(forKey: AppearanceSettings.key), "dark")
+        settings.appearance.preference = .system
+    }
+
     func testTheAppStaysResidentAfterTheLastWindowCloses() {
         XCTAssertFalse(AppDelegate().applicationShouldTerminateAfterLastWindowClosed(NSApp))
     }

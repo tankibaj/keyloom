@@ -2,8 +2,15 @@ import SwiftUI
 
 @main
 struct KeyloomApp: App {
-    @State private var environment = AppEnvironment()
+    @State private var environment: AppEnvironment
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    init() {
+        let environment = AppEnvironment()
+        _environment = State(initialValue: environment)
+        // The host and the menu bar belong to the resident app, not to the library window being open.
+        Task { await environment.start() }
+    }
 
     var body: some Scene {
         Window(AppIdentity.name, id: "library") {
@@ -12,8 +19,9 @@ struct KeyloomApp: App {
                     appDelegate.model = environment.model
                     environment.model.quitAction = { NSApp.terminate(nil) }
                 }
-                .task { await environment.start() }
         }
+        // With a MenuBarExtra scene present SwiftUI no longer opens the first window by itself.
+        .defaultLaunchBehavior(.presented)
         .commands { LibraryCommands(model: environment.model) }
         MenuBarExtra {
             if let menuBar = environment.services?.menuBar {
@@ -24,8 +32,25 @@ struct KeyloomApp: App {
         } label: {
             Image(systemName: environment.services?.menuBar.symbolName ?? "text.cursor")
                 .accessibilityLabel(AppIdentity.name)
+                .modifier(OpenLibraryAtLaunch())
         }
         .menuBarExtraStyle(.window)
-        // WP4 slice E attaches the Settings scene here.
+        Settings {
+            SettingsView(settings: environment.services?.settings, snapshotError: environment.model.snapshotError)
+        }
+    }
+}
+
+/// The menu-bar label exists from launch, so it can open the library window once, as a plain app would.
+private struct OpenLibraryAtLaunch: ViewModifier {
+    @Environment(\.openWindow) private var openWindow
+    @State private var opened = false
+
+    func body(content: Content) -> some View {
+        content.task {
+            guard !opened else { return }
+            opened = true
+            openWindow(id: "library")
+        }
     }
 }
