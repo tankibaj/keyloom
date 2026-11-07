@@ -13,7 +13,6 @@ struct ExpansionResult: Equatable, Sendable {
     var outcome: InsertionOutcome
     /// Set when the destination was left alone but Copy can still deliver the text. Never copied on its own.
     var copyOffer: RenderedSnippet?
-    var usageRecordFailed = false
 }
 
 extension InsertionOutcome {
@@ -38,6 +37,10 @@ final class ExpansionCoordinator {
     private let engine: InsertionEngine
     private let prompter: ArgumentPrompting
     private let environment: @MainActor () -> RenderEnvironment
+    /// Called when a usage write fails, after an insertion that already succeeded.
+    var onUsageRecordFailed: (@MainActor () -> Void)?
+    /// Usage writes run one after another off the resume path; each waits for the one before it.
+    private var usageRecording: Task<Void, Never>?
 
     init(library: SnippetLibrary, binder: TargetBinder, engine: InsertionEngine, prompter: ArgumentPrompting,
          environment: @escaping @MainActor () -> RenderEnvironment) {
@@ -81,11 +84,22 @@ final class ExpansionCoordinator {
 
     /// Shared with the picker route: usage is recorded only once text is actually inserted.
     func finish(_ outcome: InsertionOutcome, rendered: RenderedSnippet, snippetID: UUID?) async -> ExpansionResult {
-        var result = ExpansionResult(outcome: outcome, copyOffer: outcome.allowsCopyOffer ? rendered : nil)
-        if case .replaced = outcome, let snippetID {
-            do { try await library.recordUsage(id: snippetID) } catch { result.usageRecordFailed = true }
-        }
+        let result = ExpansionResult(outcome: outcome, copyOffer: outcome.allowsCopyOffer ? rendered : nil)
+        if case .replaced = outcome, let snippetID { recordUsageInBackground(snippetID) }
         return result
+    }
+
+    /// Resolves once every usage write started so far has finished. For tests and shutdown.
+    func waitForUsageRecording() async { await usageRecording?.value }
+
+    /// The input host stays suspended until `finish` returns, so a database write here would drop the user's
+    /// next keystrokes. The text is already inserted: a failed write is reported, never turned into a failure.
+    private func recordUsageInBackground(_ id: UUID) {
+        let previous = usageRecording
+        usageRecording = Task { [library] in
+            await previous?.value
+            do { try await library.recordUsage(id: id) } catch { onUsageRecordFailed?() }
+        }
     }
 
     /// For a target that cannot be inspected: a snippet that needs no answers can still be offered for Copy;

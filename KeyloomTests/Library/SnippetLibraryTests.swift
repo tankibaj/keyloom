@@ -167,6 +167,35 @@ final class SnippetLibraryTests: StoreTestCase {
         XCTAssertEqual(afterDelete, .emptyLibrary)
     }
 
+    func testRecordingUsageUpdatesRecencyInPlaceWithoutReloading() async throws {
+        let library = try await openLibrary(at: try databaseURL())
+        let a = try await library.create(name: "Alpha", icon: .emoji("a"), keyword: ";a", template: try document("a"))
+        let b = try await library.create(name: "Beta", icon: .emoji("b"), keyword: ";b", template: try document("b"))
+        let reloadsBefore = await library.reloadCount
+
+        try await library.recordUsage(id: a.id)
+        clock.advance(by: 60)
+        try await library.recordUsage(id: b.id)
+        await assertThrowsTyped(StoreError.notFound(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000FE")!)) {
+            try await library.recordUsage(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000FE")!)
+        }
+
+        let reloadsAfter = await library.reloadCount
+        XCTAssertEqual(reloadsAfter, reloadsBefore, "usage only changes recency: no re-decode, no index rebuild")
+        let stored = try await library.store.contents().snippets
+        let memory = await library.allSnippets()
+        XCTAssertEqual(memory, stored, "in-memory snapshot matches the store, usage included")
+        XCTAssertNotNil(memory.first { $0.id == a.id }?.lastUsedAt)
+        guard case .results(let recent) = await library.search(query: "", filter: .recentlyUsed) else { return XCTFail("expected results") }
+        XCTAssertEqual(recent.map(\.snippet.id), [b.id, a.id], "most recently used first, from the patched search index")
+        XCTAssertEqual(recent.map(\.snippet), stored.sorted { $0.lastUsedAt! > $1.lastUsedAt! })
+        let matchedA = await match(library, ";a")
+        let matchedB = await match(library, ";b")
+        XCTAssertEqual(matchedA, a.id)
+        XCTAssertEqual(matchedB, b.id)
+        await library.close()
+    }
+
     func testFiltersPinnedRecentlyUsedAndTag() async throws {
         let library = try await openLibrary(at: try databaseURL())
         let a = try await library.create(name: "Alpha", icon: .emoji("a"), keyword: nil, tags: ["x"], template: try document("a"))

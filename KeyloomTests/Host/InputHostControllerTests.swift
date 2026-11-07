@@ -165,6 +165,17 @@ final class InputHostControllerTests: StoreTestCase {
 
     // MARK: Picker
 
+    func testAFailedUsageWriteIsCountedButTheInsertionStillSucceeds() async throws {
+        try await setUpController(typed: "")
+        controller.openPicker()
+        let captured = try XCTUnwrap(try XCTUnwrap(picker.presented.first))
+        let rendered = RenderedSnippet(segments: [StyledSegment(text: "Hi", style: [])], plainText: "Hi", cursorOffset: nil)
+        let outcome = await controller.insert(rendered, into: captured, route: .plain, snippetID: UUID())
+        await controller.waitForUsageRecording()
+        XCTAssertEqual(outcome, .replaced(mode: .plain, verified: true, clipboard: .notTouched))
+        XCTAssertEqual(controller.status.usageRecordFailures, 1)
+    }
+
     func testPickerCapturesTheDestinationBeforeAnyUIAndInsertsAfterFocusReturns() async throws {
         try await setUpController(typed: "")
         let before = destination.snapshot()

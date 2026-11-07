@@ -4,6 +4,7 @@ import Foundation
 /// `SnippetStore` and keeps everything derived from it consistent: after every committed mutation it reloads
 /// the library, rebuilds the keyword index and the search index, swaps the index into `KeywordIndexStore`, and
 /// only then returns and publishes the change. The reload happens on this actor, never on a keyboard callback.
+/// `recordUsage` is the exception: usage never affects the indexes, so it patches the snapshot in place.
 ///
 /// - Reads (`allSnippets`, `snippet(id:)`, `search`, `tags`, diagnostics) come from the in-memory snapshot, so
 ///   they reflect every mutation that has returned.
@@ -31,6 +32,8 @@ actor SnippetLibrary {
     private var searchIndex = SearchIndex(snippets: [])
     private var issuedTicket = 0
     private var appliedTicket = 0
+    /// Full reloads performed (open, committed content mutations, sync). Diagnostics and tests: usage never adds one.
+    private(set) var reloadCount = 0
 
     /// Opens (creating, migrating and backing up as needed) the library at `url` and loads it. Opening
     /// blocks on file I/O: do it off the keyboard callback.
@@ -164,8 +167,13 @@ actor SnippetLibrary {
     }
 
     /// Records that the snippet was expanded or inserted (device-local, no revision bump). Only the ID is kept.
+    /// Usage changes only recency, so the snapshot and search index are patched in place: no reload, and the
+    /// keyword index (which never reads usage) is left alone.
     func recordUsage(id: UUID) async throws {
-        try await commit({ _ in .usageRecorded(id) }) { try await $0.recordUsage(id: id) }
+        let usedAt = try await store.recordUsage(id: id)
+        if let index = snapshot.firstIndex(where: { $0.id == id }) { snapshot[index].lastUsedAt = usedAt }
+        searchIndex.setLastUsedAt(usedAt, for: id)
+        changeContinuation.yield(.usageRecorded(id))
     }
 
     // MARK: Keyword diagnostics
@@ -230,6 +238,7 @@ actor SnippetLibrary {
     }
 
     func reload() async throws {
+        reloadCount += 1
         issuedTicket += 1
         let ticket = issuedTicket
         let contents = try await store.contents()
