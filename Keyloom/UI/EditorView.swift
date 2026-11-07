@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The detail column: a borderless title, keyword and tags as one-line rows, the template beside (or, in a narrow
-/// column, above) its live "Expands to" result, and this device's usage of the snippet.
+/// column, above) its live preview, and this device's usage of the snippet.
 struct EditorView: View {
     @Bindable var editor: EditorViewModel
     @State private var showingIcons = false
@@ -22,6 +22,7 @@ struct EditorView: View {
                 keywordSection
                 tagsRow
                 panes
+                if let keyword = editor.typedAnywhereKeyword { typedAnywhereLine(keyword) }
                 Text(editor.usageLine)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -99,6 +100,19 @@ struct EditorView: View {
         }
     }
 
+    private func typedAnywhereLine(_ keyword: String) -> some View {
+        HStack(spacing: 6) {
+            Text("Typed anywhere:")
+            KeywordChip(keyword: keyword)
+            Text("→ expands in place.")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Typed anywhere: \(keyword) expands in place.")
+        .accessibilityIdentifier("editor.typedAnywhere")
+    }
+
     private func rowLabel(_ title: String) -> some View {
         Text(title).foregroundStyle(.secondary).frame(width: Self.labelWidth, alignment: .leading)
     }
@@ -145,12 +159,9 @@ struct EditorView: View {
     }
 
     private var tagsRow: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             rowLabel("Tags")
-            TextField("Separate tags with commas", text: $editor.draft.tagsText)
-                .textFieldStyle(.plain)
-                .fieldBackground()
-                .accessibilityLabel("Tags")
+            TagChipsView(editor: editor)
         }
     }
 
@@ -298,7 +309,7 @@ struct EditorView: View {
 
     private var expandsToPane: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("EXPANDS TO")
+            Text("PREVIEW")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
@@ -380,7 +391,7 @@ private struct KeywordKey: Hashable {
 }
 
 private extension View {
-    /// A single-line field on a quiet rounded fill, like the keyword and tags values in the mock.
+    /// A single-line field on a quiet rounded fill, like the keyword value in the mock.
     func fieldBackground() -> some View {
         padding(.horizontal, 9)
             .padding(.vertical, 5)

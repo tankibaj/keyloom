@@ -36,8 +36,8 @@ struct SnippetIconTile: View {
     }
 }
 
-/// The sidebar footer: whether typing expansion works right now. Needs Accessibility is a button that opens the fix.
-struct ExpansionStatusFooter: View {
+/// The toolbar chip: whether typing expansion works right now. Needs Accessibility is a button that opens the fix.
+struct ExpansionStatusChip: View {
     let status: ExpansionStatus
     let openAccessibility: () -> Void
 
@@ -52,14 +52,12 @@ struct ExpansionStatusFooter: View {
     var body: some View {
         let content = HStack(spacing: 6) {
             Circle().fill(color).frame(width: 7, height: 7)
-            Text(status.title).font(.callout)
-            Spacer(minLength: 0)
+            Text(status.title).font(.callout).lineLimit(1)
             if status == .needsAccessibility { Image(systemName: "arrow.up.forward").font(.caption).foregroundStyle(.secondary) }
         }
         .foregroundStyle(status == .needsAccessibility ? .primary : .secondary)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+        .frame(minHeight: 24)
         .contentShape(Rectangle())
         Group {
             if status == .needsAccessibility {
@@ -79,8 +77,6 @@ struct ExpansionStatusFooter: View {
 
 struct SidebarView: View {
     @Bindable var library: LibraryViewModel
-    var status: ExpansionStatus?
-    var openAccessibility: () -> Void = {}
 
     var body: some View {
         List(selection: Binding<SidebarItem?>(get: { library.sidebarItem }, set: { if let item = $0 { library.sidebarItem = item } })) {
@@ -101,9 +97,6 @@ struct SidebarView: View {
             }
         }
         .accessibilityLabel("Library navigation")
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let status { ExpansionStatusFooter(status: status, openAccessibility: openAccessibility) }
-        }
         .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 280)
     }
 }

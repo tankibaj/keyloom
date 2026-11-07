@@ -16,6 +16,11 @@ final class CreateJourneyTests: KeyloomUITestCase {
             try type("Meeting follow-up", into: nameField)
             try type("::follow", into: keywordField)
             try type("work, email", into: tagsField)
+            nameField.click()
+            expect(library.buttons["Remove tag work"].waitForExistence(timeout: 4) && library.buttons["Remove tag email"].exists,
+                   "leaving the tags field turns the comma-separated input into removable chips")
+            library.buttons["Remove tag email"].click()
+            expect(disappears(library.buttons["Remove tag email"]), "the chip's remove button removes the tag")
 
             // Icon picker (Shortcuts style): Symbols tab with color row, search and grid; then the Emoji tab.
             let icon = library.buttons.matching(NSPredicate(format: "label == 'Icon'")).firstMatch
@@ -94,17 +99,23 @@ final class CreateJourneyTests: KeyloomUITestCase {
             try need(row("Meeting follow-up"), "saved row")
             shot("saved")
 
-            // Cancel: a clean new draft closes at once; a dirty one asks first.
+            // Escape (close the editor): a clean new draft closes at once; a dirty one asks first.
             try startNewSnippet()
-            library.buttons["Cancel"].click()
-            expect(disappears(nameField), "Cancel on an untouched new snippet closes the editor")
+            app.typeKey(.escape, modifierFlags: [])
+            expect(disappears(nameField), "Escape on an untouched new snippet closes the editor")
             try startNewSnippet()
             try type("Scratch note", into: nameField)
-            library.buttons["Cancel"].click()
-            try need(library.sheets.buttons["Keep Editing"], "unsaved-changes sheet after Cancel")
+            let caption = library.staticTexts["Edited · not saved"]
+            expect(caption.waitForExistence(timeout: 4), "an edited draft says so in the toolbar")
+            library.buttons["Revert"].click()
+            expect(disappears(caption), "Revert resets the draft and clears the caption")
+            expect((nameField.value as? String ?? "").isEmpty, "Revert empties the new draft's name")
+            try type("Scratch note", into: nameField)
+            app.typeKey(.escape, modifierFlags: [])
+            try need(library.sheets.buttons["Keep Editing"], "unsaved-changes sheet after Escape")
             shot("cancel-dirty-prompt")
             try resolveDirtySheet("Keep Editing")
-            library.buttons["Cancel"].click()
+            app.typeKey(.escape, modifierFlags: [])
             try resolveDirtySheet("Discard Changes")
             expect(disappears(nameField), "Discard Changes closes the editor")
 

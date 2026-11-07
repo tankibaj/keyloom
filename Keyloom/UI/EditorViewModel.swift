@@ -24,7 +24,21 @@ struct SnippetDraft: Equatable {
     /// Trimmed, non-empty, first spelling wins.
     var tags: [String] {
         var seen = Set<String>()
-        return tagsText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty && seen.insert($0).inserted }
+        return SnippetDraft.names(in: tagsText).filter { seen.insert($0).inserted }
+    }
+
+    /// Appends the comma-separated names in `text`, keeping the stored "a, b" format; blanks and repeats add nothing.
+    mutating func addTags(from text: String) {
+        let added = SnippetDraft.names(in: text)
+        tagsText = (tags + added).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.joined(separator: ", ")
+    }
+
+    mutating func removeTag(_ tag: String) {
+        tagsText = tags.filter { $0 != tag }.joined(separator: ", ")
+    }
+
+    private static func names(in text: String) -> [String] {
+        text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     }
 
     var normalizedKeyword: String? {
@@ -96,6 +110,8 @@ final class EditorViewModel {
     }
     private(set) var baseline: SnippetDraft
     var errorMessage: String?
+    /// Text typed in the "Add tag…" field and not yet turned into a chip; saving and leaving the field commit it.
+    var pendingTag = ""
     private(set) var bodyRevision = 0
     /// The on-device assistance action for this editor; nil until the app wires the service in.
     var assistance: AssistanceEditorModel?
@@ -123,7 +139,11 @@ final class EditorViewModel {
         RenderEnvironment(date: Date(), timeZone: .current, locale: .current, makeUUID: { UUID() }, clipboardText: { "(clipboard)" })
     }
 
-    var isDirty: Bool { draft != baseline }
+    var isDirty: Bool { draft != baseline || !pendingTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// The toolbar caption beside Revert and Save.
+    var dirtyCaption: String? { isDirty ? "Edited · not saved" : nil }
+    /// The keyword the "Typed anywhere" line shows: only one that expands automatically.
+    var typedAnywhereKeyword: String? { draft.enabled ? draft.normalizedKeyword : nil }
     var canSave: Bool {
         isDirty && !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !(draft.enabled && keywordFeedback.blocksEnabling)
     }
@@ -221,6 +241,7 @@ final class EditorViewModel {
     /// Stores the draft: a new snippet, or the edits on the existing one (same ID). On failure the edits stay.
     func save() async -> Bool {
         errorMessage = nil
+        commitPendingTag()
         guard canSave else {
             if draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 errorMessage = "Give the snippet a name before saving."
@@ -275,8 +296,18 @@ final class EditorViewModel {
         await refreshKeywordFeedback()
     }
 
+    func addTags(from text: String) { draft.addTags(from: text) }
+    func removeTag(_ tag: String) { draft.removeTag(tag) }
+
+    func commitPendingTag() {
+        guard !pendingTag.isEmpty else { return }
+        addTags(from: pendingTag)
+        pendingTag = ""
+    }
+
     /// Drops unsaved edits, including those in the text view.
     func revert() {
+        pendingTag = ""
         draft = baseline
         errorMessage = nil
         bodyController.load(baseline.body)

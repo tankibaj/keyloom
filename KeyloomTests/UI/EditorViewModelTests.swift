@@ -109,6 +109,73 @@ final class EditorViewModelTests: LibraryUITestCase {
         XCTAssertFalse(editor.isDirty)
     }
 
+    func testDirtyCaptionAppearsOnlyWhileTheDraftDiffersAndRevertClearsIt() async throws {
+        let library = try await openLibrary()
+        let original = try await seed(library, "Name", body: "Saved text")
+        let editor = makeEditor(library, snippet: original)
+        XCTAssertNil(editor.dirtyCaption)
+        editor.draft.name = "Changed"
+        XCTAssertEqual(editor.dirtyCaption, "Edited · not saved")
+        editor.revert()
+        XCTAssertNil(editor.dirtyCaption)
+    }
+
+    func testAddingTagsAppendsTrimmedUniqueNamesInTheStoredFormat() async throws {
+        let editor = makeEditor(try await openLibrary())
+        editor.draft.tagsText = "work"
+        editor.addTags(from: " mail ,, work, urgent ")
+        XCTAssertEqual(editor.draft.tags, ["work", "mail", "urgent"])
+        XCTAssertEqual(editor.draft.tagsText, "work, mail, urgent")
+        editor.addTags(from: "   ")
+        XCTAssertEqual(editor.draft.tagsText, "work, mail, urgent", "blank input adds nothing")
+    }
+
+    func testRemovingATagKeepsTheOthersAndReturnsToCleanWhenReAdded() async throws {
+        let library = try await openLibrary()
+        let seeded = try await seed(library, "Name", tags: ["email", "work"])
+        let editor = makeEditor(library, snippet: seeded)
+        editor.removeTag("email")
+        XCTAssertEqual(editor.draft.tags, ["work"])
+        XCTAssertTrue(editor.isDirty)
+        editor.removeTag("missing")
+        XCTAssertEqual(editor.draft.tags, ["work"])
+        editor.addTags(from: "email")
+        editor.draft.tagsText = "email, work"
+        XCTAssertFalse(editor.isDirty)
+    }
+
+    func testPendingTagTextCountsAsEditedAndIsSavedWithoutPressingReturn() async throws {
+        let library = try await openLibrary()
+        let editor = makeEditor(library)
+        editor.draft.name = "Greeting"
+        editor.pendingTag = "work, mail"
+        XCTAssertTrue(editor.isDirty)
+        let saved = await editor.save()
+        XCTAssertTrue(saved)
+        XCTAssertEqual(editor.pendingTag, "")
+        let all = await library.allSnippets()
+        let stored = try XCTUnwrap(all.first)
+        XCTAssertEqual(stored.tags, ["work", "mail"])
+    }
+
+    func testRevertDropsPendingTagText() async throws {
+        let editor = makeEditor(try await openLibrary())
+        editor.pendingTag = "half-typed"
+        XCTAssertTrue(editor.isDirty)
+        editor.revert()
+        XCTAssertEqual(editor.pendingTag, "")
+        XCTAssertFalse(editor.isDirty)
+    }
+
+    func testTypedAnywhereKeywordIsOfferedOnlyForAnEnabledKeyword() async throws {
+        let editor = makeEditor(try await openLibrary())
+        XCTAssertNil(editor.typedAnywhereKeyword)
+        editor.draft.keyword = "  ::sig "
+        XCTAssertEqual(editor.typedAnywhereKeyword, "::sig")
+        editor.draft.enabled = false
+        XCTAssertNil(editor.typedAnywhereKeyword)
+    }
+
     func testBodyEditsFlowFromTheTextControlIntoTheDraftWithoutTouchingTheLibrary() async throws {
         let library = try await openLibrary()
         let editor = makeEditor(library)

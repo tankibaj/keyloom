@@ -52,8 +52,7 @@ private struct LibrarySplitView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(library: library, status: status,
-                        openAccessibility: { openURL(ExpansionStatus.accessibilitySettingsURL) })
+            SidebarView(library: library)
         } content: {
             SnippetListView(library: library, select: { id in Task { await model.requestSelection(id) } },
                             newSnippet: { Task { await model.requestNewSnippet() } })
@@ -62,9 +61,18 @@ private struct LibrarySplitView: View {
                 EditorView(editor: editor)
                     .id(ObjectIdentifier(editor))
                     .toolbar { detailToolbar(editor) }
+                    .background { closeEditorShortcut }
             } else {
                 ContentUnavailableView("Select a Snippet", systemImage: "text.cursor",
                                        description: Text("Choose a snippet from the list, or create one with New Snippet."))
+            }
+        }
+        .toolbar {
+            // Always visible, at the top of the window: nothing critical at the bottom of the sidebar.
+            if let status {
+                ToolbarItem(placement: .primaryAction) {
+                    ExpansionStatusChip(status: status, openAccessibility: { openURL(ExpansionStatus.accessibilitySettingsURL) })
+                }
             }
         }
         .searchable(text: $library.query, placement: .toolbar, prompt: "Search snippets")
@@ -110,10 +118,20 @@ private struct LibrarySplitView: View {
             .disabled(saved == nil)
         }
         ToolbarSpacer(.fixed)
-        ToolbarItem(placement: .cancellationAction) {
-            Button("Cancel") { Task { await model.requestCancel() } }
-                .keyboardShortcut(.cancelAction)
-                .help("Close the editor without saving (Escape)")
+        if let caption = editor.dirtyCaption {
+            ToolbarItem {
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("editor.dirtyCaption")
+            }
+        }
+        ToolbarItem {
+            Button("Revert") { editor.revert() }
+                .disabled(!editor.isDirty)
+                .help("Discard the changes since the last save")
+                .accessibilityIdentifier("editor.revert")
         }
         ToolbarItem(placement: .confirmationAction) {
             Button("Save") { Task { await model.saveEditor() } }
@@ -122,6 +140,16 @@ private struct LibrarySplitView: View {
                 .help("Save this snippet (Command-S)")
                 .accessibilityIdentifier("editor.save")
         }
+    }
+
+    /// Escape closes the editor through the unsaved-changes confirmation. It has no toolbar button: Revert owns
+    /// the visible slot, and a third button would overflow the toolbar at the minimum window width.
+    private var closeEditorShortcut: some View {
+        Button("Close Editor") { Task { await model.requestCancel() } }
+            .keyboardShortcut(.cancelAction)
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
     }
 
     private var dismissalTitle: String {
