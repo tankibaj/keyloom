@@ -34,6 +34,20 @@
                ReferencedContainer = "container:Keyloom.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7A0000000000000000000053"
+               BuildableName = "KeyloomUITests.xctest"
+               BlueprintName = "KeyloomUITests"
+               ReferencedContainer = "container:Keyloom.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -49,6 +63,16 @@
                BlueprintIdentifier = "7A0000000000000000000052"
                BuildableName = "KeyloomTests.xctest"
                BlueprintName = "KeyloomTests"
+               ReferencedContainer = "container:Keyloom.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7A0000000000000000000053"
+               BuildableName = "KeyloomUITests.xctest"
+               BlueprintName = "KeyloomUITests"
                ReferencedContainer = "container:Keyloom.xcodeproj">
             </BuildableReference>
          </TestableReference>

@@ -48,6 +48,7 @@ private struct LibrarySplitView: View {
                         }
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Save") { Task { await model.saveEditor() } }.disabled(!editor.canSave)
+                                .accessibilityIdentifier("editor.save")
                         }
                     }
             } else {
@@ -62,6 +63,7 @@ private struct LibrarySplitView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button("New Snippet", systemImage: "square.and.pencil") { Task { await model.requestNewSnippet() } }
                     .help("New Snippet")
+                    .accessibilityIdentifier("library.newSnippet")
             }
         }
         .task { await library.observeChanges() }

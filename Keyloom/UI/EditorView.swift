@@ -39,6 +39,7 @@ struct EditorView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.title2)
                 .accessibilityLabel("Snippet name")
+                .accessibilityIdentifier("editor.name")
         }
     }
 
