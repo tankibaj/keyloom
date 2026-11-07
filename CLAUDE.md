@@ -12,6 +12,7 @@ Keyloom is a macOS 26+ (arm64, Swift 6, warnings are errors) menu-bar text expan
   `xcodebuild test -project Keyloom.xcodeproj -scheme Keyloom -destination 'platform=macOS' -derivedDataPath /tmp/keyloom-dd ENABLE_TESTABILITY=YES SWIFT_OPTIMIZATION_LEVEL=-Onone -only-testing:KeyloomTests`
   The two build settings are required: the Debug config otherwise yields a module `@testable import` rejects. One class or test: `-only-testing:KeyloomTests/KeystrokeInsertionTests` or `.../KeystrokeInsertionTests/testName`. Pipe through `grep -E "error:|failed|Executed|TEST (SUCCEEDED|FAILED)"`.
 - UI tests: scheme `KeyloomUITests` (the app runs with `--keyloom-ui-test`, inert OS boundaries). `KeyloomProbe` and `Feasibility/` are a standalone feasibility probe, not part of the app.
+  UI-test screenshots (the runner is sandboxed, tests attach them to the `.xcresult`): `scripts/export-ui-screenshots.sh <result.xcresult> [root]`.
 - Release (Developer ID, notarize) and idle profile: `scripts/release/release.sh --help`, `scripts/profile/profile.sh --help`.
 - Logs (outcome names only, never text): `log show --last 5m --predicate 'subsystem == "com.thenaim.keyloom"'`.
 
@@ -33,4 +34,5 @@ All OS boundaries (permissions, workspace, AX, pasteboard, key posting, tap, hot
 - Preference keys and attributed-string keys keep the old `app.keyloom.` prefix on purpose (changing them resets saved settings); the bundle id is `com.thenaim.keyloom`. Snippet data lives in `~/Library/Application Support/Keyloom`, independent of the bundle id.
 - iCloud sync needs a provisioned build (CloudKit entitlement, paid team); this build reports "not signed for iCloud".
 - Typed text, snippet text and clipboard contents must never be logged, stored in errors or counters.
+- Unit tests cover the typing route with fakes only; behavior in real apps (browsers, Electron, terminals) must be checked by hand against the installed build.
 - Tests must not touch the real clipboard (use a named `NSPasteboard`) or install a real tap/hotkey (`AppEnvironment` picks inert dependencies under XCTest).
