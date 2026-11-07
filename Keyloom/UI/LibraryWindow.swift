@@ -22,12 +22,13 @@ struct LibraryWindow: View {
             }
         }
         .frame(minWidth: 860, minHeight: 520)
+        .background(WindowCloseGuardInstaller(model: model))
         .task { await model.open() }
     }
 }
 
 private struct LibrarySplitView: View {
-    let model: AppModel
+    @Bindable var model: AppModel
     @Bindable var library: LibraryViewModel
     @FocusState private var searchFocused: Bool
 
@@ -35,26 +36,52 @@ private struct LibrarySplitView: View {
         NavigationSplitView {
             SidebarView(library: library)
         } content: {
-            SnippetListView(library: library, select: { library.selection = $0 }, newSnippet: { Task { await model.newSnippet() } })
+            SnippetListView(library: library, select: { id in Task { await model.requestSelection(id) } },
+                            newSnippet: { Task { await model.requestNewSnippet() } })
         } detail: {
-            ContentUnavailableView("Select a Snippet", systemImage: "text.cursor",
-                                   description: Text("Choose a snippet from the list, or create one with New Snippet."))
+            if let editor = model.editor {
+                EditorView(editor: editor)
+                    .id(ObjectIdentifier(editor))
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { Task { await model.requestCancel() } }.keyboardShortcut(.cancelAction)
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") { Task { await model.saveEditor() } }.disabled(!editor.canSave)
+                        }
+                    }
+            } else {
+                ContentUnavailableView("Select a Snippet", systemImage: "text.cursor",
+                                       description: Text("Choose a snippet from the list, or create one with New Snippet."))
+            }
         }
         .searchable(text: $library.query, placement: .toolbar, prompt: "Search snippets")
         .searchFocused($searchFocused)
         .onChange(of: model.searchFocusRequests) { searchFocused = true }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("New Snippet", systemImage: "square.and.pencil") { Task { await model.newSnippet() } }
+                Button("New Snippet", systemImage: "square.and.pencil") { Task { await model.requestNewSnippet() } }
                     .help("New Snippet")
             }
         }
         .task { await library.observeChanges() }
+        .confirmationDialog(dismissalTitle, isPresented: Binding(get: { model.pendingDismissal != nil }, set: { _ in }), titleVisibility: .visible) {
+            Button("Save") { Task { await model.resolvePending(.save) } }.keyboardShortcut(.defaultAction)
+            Button("Discard Changes", role: .destructive) { Task { await model.resolvePending(.discard) } }
+            Button("Keep Editing", role: .cancel) { Task { await model.resolvePending(.keepEditing) } }
+        } message: {
+            Text("Your changes are lost if you don’t save them.")
+        }
         .alert("Couldn’t Complete That", isPresented: Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.errorMessage = nil } })) {
             Button("OK") { library.errorMessage = nil }
         } message: {
             Text(library.errorMessage ?? "")
         }
+    }
+
+    private var dismissalTitle: String {
+        let name = model.editor?.draft.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? "Save changes to this snippet?" : "Save changes to “\(name)”?"
     }
 }
 
@@ -63,9 +90,12 @@ struct LibraryCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Snippet") { Task { await model.newSnippet() } }
+            Button("New Snippet") { Task { await model.requestNewSnippet() } }
                 .keyboardShortcut("n")
                 .disabled(model.libraryModel == nil)
+            Button("Save Snippet") { Task { await model.saveEditor() } }
+                .keyboardShortcut("s")
+                .disabled(model.editor?.canSave != true)
         }
         CommandGroup(after: .newItem) {
             let library = model.libraryModel

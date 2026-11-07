@@ -14,14 +14,19 @@ final class RichTextController: NSObject, NSTextViewDelegate {
     @ObservationIgnored private var isApplying = false
     @ObservationIgnored private var editMayCompleteToken = false
 
+    @ObservationIgnored private var pendingDocument: Document?
+
     func attach(_ textView: NSTextView) {
         self.textView = textView
         textView.delegate = self
+        if let pendingDocument { load(pendingDocument) }
     }
 
-    /// Replaces the text with `document` and does not publish.
+    /// Replaces the text with `document` and does not publish. Before a text view is attached it is kept until one is.
     func load(_ document: Document) {
+        pendingDocument = document
         guard let textView, let storage = textView.textStorage else { return }
+        pendingDocument = nil
         isApplying = true
         defer { isApplying = false }
         storage.setAttributedString(RichTextConverter.attributedString(from: document))

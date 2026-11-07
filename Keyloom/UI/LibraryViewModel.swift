@@ -63,6 +63,9 @@ final class LibraryViewModel {
     var sidebarItem: SidebarItem = .all { didSet { if sidebarItem != oldValue { launch { await $0.refresh() } } } }
     var query = "" { didSet { if query != oldValue { launch { await $0.refresh() } } } }
     var selection: UUID?
+    /// How the model asks for a selection change it makes itself (duplicate, delete, undo). `AppModel` sets it to
+    /// route through the dirty-edit guard; without it the selection just changes.
+    @ObservationIgnored var selectionRequest: (@MainActor (UUID?) async -> Void)?
     var undoManager: UndoManager?
     private(set) var rows: [SnippetRow] = []
     private(set) var tags: [TagSummary] = []
@@ -122,7 +125,11 @@ final class LibraryViewModel {
     func duplicate(id: UUID) async {
         guard let copy = await attempt({ try await library.duplicate(id: id) }) else { return }
         await refresh()
-        selection = copy.id
+        await select(copy.id)
+    }
+
+    func select(_ id: UUID?) async {
+        if let selectionRequest { await selectionRequest(id) } else { selection = id }
     }
 
     func togglePin(id: UUID) async {
@@ -142,8 +149,8 @@ final class LibraryViewModel {
             MainActor.assumeIsolated { model.launch { await $0.undoLastDelete() } }
         }
         undoManager?.setActionName("Delete Snippet")
-        if selection == id { selection = neighbor }
         await refresh()
+        if selection == id { await select(neighbor) }
     }
 
     func undoLastDelete() async {
@@ -151,7 +158,7 @@ final class LibraryViewModel {
         lastDeleted = nil
         guard await attempt({ try await library.restore(id: id) }) != nil else { return }
         await refresh()
-        selection = id
+        await select(id)
     }
 
     /// Runs `operation` after the previous queued one; `idle()` waits for the queue. The undo manager and
@@ -184,6 +191,8 @@ enum UserMessage {
         case let error as LocalizedError where error.errorDescription != nil: error.errorDescription!
         case KeyloomError.invalidSnippet(let field, let reason): "The snippet’s \(field) \(reason)."
         case KeyloomError.multipleCursors: "A snippet can have only one cursor placeholder."
+        case RenderError.choiceNotInOptions(let name): "The default or sample value for “\(name)” is not one of its choices."
+        case RenderError.missingArguments: "Some arguments have no sample value."
         case is KeyloomError: "The snippet text could not be saved."
         default: "Something went wrong."
         }

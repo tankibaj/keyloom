@@ -65,7 +65,7 @@ enum RichTextConverter {
         if isMarker { result[listMarkerKey] = true }
         if isToken {
             result[tokenKey] = true
-            result[.backgroundColor] = NSColor.controlAccentColor.withAlphaComponent(0.2)
+            result[.backgroundColor] = NSColor.controlAccentColor.withAlphaComponent(0.3)
         }
         return result
     }
