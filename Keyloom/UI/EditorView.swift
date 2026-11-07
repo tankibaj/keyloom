@@ -8,12 +8,17 @@ struct EditorView: View {
     @State private var showingArgument = false
     @State private var argumentForm = ArgumentForm()
     @State private var width: CGFloat = 0
+    @State private var height: CGFloat = 0
 
     private static let labelWidth: CGFloat = 62
     /// Two panes of at least 320 pt each, the gap and the margins.
     private static let sideBySideWidth: CGFloat = 700
 
     private var sideBySide: Bool { width >= Self.sideBySideWidth }
+    /// Side by side, the panes take the height the rows above leave, so a tall window has no empty band under them.
+    private var bodyMinHeight: CGFloat { sideBySide ? max(180, height - Self.aboveBodyHeight) : 180 }
+    /// The header, keyword and tag rows, the pane chrome (formatting and insert bars), the usage line and the margins.
+    private static let aboveBodyHeight: CGFloat = 400
 
     var body: some View {
         ScrollView {
@@ -32,7 +37,7 @@ struct EditorView: View {
             .padding(.vertical, 18)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { width = $0.width; height = $0.height }
         .task(id: editor.target) { await editor.refreshUsage() }
         .onChange(of: editor.errorMessage) { _, message in
             if let message { AccessibilityNotification.Announcement(message).post() }
@@ -167,20 +172,15 @@ struct EditorView: View {
 
     // MARK: Template and result
 
-    @ViewBuilder
+    /// One layout that switches axis, never an if/else: a branch change would rebuild the body's NSTextView, which
+    /// then comes up empty.
     private var panes: some View {
-        if sideBySide {
-            HStack(alignment: .top, spacing: 12) {
-                templatePane.frame(maxWidth: .infinity)
-                expandsToPane.frame(maxWidth: .infinity)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-        } else {
-            VStack(alignment: .leading, spacing: 12) {
-                templatePane
-                expandsToPane
-            }
+        let layout = sideBySide ? AnyLayout(HStackLayout(alignment: .top, spacing: 12)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+        return layout {
+            templatePane.frame(maxWidth: .infinity)
+            expandsToPane.frame(maxWidth: .infinity)
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var templatePane: some View {
@@ -191,7 +191,7 @@ struct EditorView: View {
                 .background(Color(nsColor: .windowBackgroundColor))
             Divider()
             RichTextView(controller: editor.bodyController)
-                .frame(minHeight: 180)
+                .frame(minHeight: bodyMinHeight)
             tokenBar
         }
         .paneChrome()

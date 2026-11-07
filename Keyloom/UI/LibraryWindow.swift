@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The smallest library window: wide enough for the sidebar, the list and the editor with its toolbar.
+/// The smallest library window: wide enough for the sidebar, the list and the editor, and for the whole toolbar
+/// (status chip, Pin/Duplicate/Delete, edited caption, Revert, Save) to show without the overflow menu.
 enum LibraryWindowMetrics {
-    static let minimumSize = CGSize(width: 860, height: 520)
+    static let minimumSize = CGSize(width: 1020, height: 520)
 
     /// A frame restored from an earlier session may be smaller than the content; it is grown, never shrunk.
     static func clamped(_ size: CGSize) -> CGSize {
