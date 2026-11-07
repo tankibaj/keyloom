@@ -12,3 +12,10 @@ test-results/
 # Release artifacts (scripts/release)
 /dist/
 /Resources/
+
+# Agent working docs (plans, retros, spikes, work packages, handovers)
+docs/plan/
+docs/retros/
+docs/spike/
+docs/wp/
+docs/handover/
