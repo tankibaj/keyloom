@@ -10,7 +10,7 @@ import XCTest
 /// Full screen and Split View are NOT VERIFIED: they change Spaces.
 @MainActor
 final class ResizeJourneyTests: KeyloomUITestCase {
-    private let minimum = CGSize(width: 1020, height: 520)
+    private let minimum = CGSize(width: 1020, height: 640)
 
     /// Sets the library window's size and position through System Events; nil on success, else why not.
     private func setWindow(size: CGSize, origin: CGPoint = CGPoint(x: 20, y: 60)) -> String? {

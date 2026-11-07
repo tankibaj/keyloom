@@ -24,7 +24,7 @@ struct EditorView: View {
     /// Side by side, the panes take the height the rows above leave, so a tall window has no empty band under them.
     private var bodyMinHeight: CGFloat {
         // Stacked, the preview keeps its own 120 pt and the gap; side by side it shares the row.
-        sideBySide ? max(180, height - Self.aboveBodyHeight) : max(180, height - Self.aboveBodyHeight - 140)
+        sideBySide ? max(180, height - Self.aboveBodyHeight) : max(110, height - Self.aboveBodyHeight - 140)
     }
     /// The header, keyword and tag rows, the pane chrome (formatting and insert bars), the usage line and the margins.
     private static let aboveBodyHeight: CGFloat = 400

@@ -3,7 +3,7 @@ import SwiftUI
 /// The smallest library window: wide enough for the sidebar, the list and the editor, and for the whole toolbar
 /// (Sort, New, Pin/Duplicate/Delete, search) to show without the overflow menu.
 enum LibraryWindowMetrics {
-    static let minimumSize = CGSize(width: 1020, height: 520)
+    static let minimumSize = CGSize(width: 1020, height: 640)
 
     /// A frame restored from an earlier session may be smaller than the content; it is grown, never shrunk.
     static func clamped(_ size: CGSize) -> CGSize {
@@ -96,7 +96,6 @@ private struct LibrarySplitView: View {
     /// foot of the sidebar.
     @ToolbarContentBuilder
     private func trailingToolbar(editor: EditorViewModel?) -> some ToolbarContent {
-        ToolbarSpacer(.flexible)
         ToolbarItem {
             Button("New Snippet", systemImage: "square.and.pencil") { Task { await model.requestNewSnippet() } }
                 .help("Create a snippet (Command-N)")
