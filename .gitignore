@@ -9,3 +9,5 @@ xcuserdata/
 screenshots/
 traces/
 test-results/
+# Release artifacts (scripts/release)
+/dist/
