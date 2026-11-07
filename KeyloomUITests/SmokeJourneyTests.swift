@@ -33,7 +33,7 @@ final class SmokeJourneyTests: KeyloomUITestCase {
 
         let checks: [(tab: String, element: (XCUIElement) -> XCUIElement)] = [
             ("General", { $0.segmentedControls["settings.general.appearance"] }),
-            ("Expansion", { $0.switches["settings.expansion.pause"] }),
+            ("Expansion", { $0.switches["settings.expansion.uninspectable"] }),
             ("Sync & Backups", { $0.buttons["settings.snapshots.backup"] }),
             ("Writing Assistance", { $0.switches["Use on-device writing assistance"] }),
         ]

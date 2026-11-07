@@ -37,15 +37,10 @@ final class SettingsJourneyTests: KeyloomUITestCase {
             app.typeKey(.escape, modifierFlags: [])
             expect(settings.buttons["settings.general.shortcutReset"].exists, "Reset is offered")
 
-            // Expansion: pause, permissions (not granted in the inert host), excluded apps.
+            // Expansion: health, permissions (not granted in the inert host), excluded apps.
             try openSettings(tab: "Expansion")
-            let pause = settings.switches["settings.expansion.pause"]
-            try need(pause, "pause switch")
             shot("expansion", of: [settings])
-            pause.click()
-            expect(wait(pause, until: "value == 1"), "Pause expansion turns on")
-            shot("expansion-paused", of: [settings])
-            pause.click()
+            expect(settings.switches["settings.expansion.uninspectable"].exists, "the behavior switch is offered")
             expect(settings.buttons["settings.expansion.request"].exists, "access can be requested while a permission is missing")
 
             // Sync & Backups.

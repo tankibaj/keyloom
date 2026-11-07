@@ -20,6 +20,16 @@ final class ExpansionSettingsModel {
         var id: String { bundleID }
     }
 
+    /// One line on whether typing expansion works, derived from the host. Accessibility outranks everything: without
+    /// it nothing can expand, whatever else is set.
+    struct Health: Equatable {
+        enum Level: Equatable { case good, paused, attention }
+        let level: Level
+        let title: String
+        let detail: String
+        let symbol: String
+    }
+
     var errorMessage: String?
     /// Kept here because the host's list is not observable.
     private(set) var excludedIDs: Set<String>
@@ -46,9 +56,29 @@ final class ExpansionSettingsModel {
         let granted = host.status.permissions
         return [
             PermissionRow(title: "Accessibility",
-                          detail: "Lets Keyloom notice a keyword as you type it and replace it with the snippet. Keys are matched in memory and never stored.",
+                          detail: "Lets Keyloom see the keyword you type and insert text. Keys are matched in memory and never stored.",
                           isGranted: granted.accessibility, isRequired: true),
         ]
+    }
+
+    var health: Health {
+        if needsPermission {
+            return Health(level: .attention, title: "Expansion needs Accessibility",
+                          detail: "Allow Keyloom in Privacy & Security so it can see the keyword you type.",
+                          symbol: "exclamationmark.triangle.fill")
+        }
+        if host.status.isPaused {
+            return Health(level: .paused, title: "Expansion is paused",
+                          detail: "Typing a keyword does nothing. Resume from the menu bar. The picker still works.",
+                          symbol: "pause.circle.fill")
+        }
+        if host.status.isSecureInputActive {
+            return Health(level: .attention, title: "Secure input is on",
+                          detail: "Keyloom skips keywords until the password field or app that turned it on lets go.",
+                          symbol: "lock.fill")
+        }
+        return Health(level: .good, title: "Expansion is on", detail: "Keywords expand as you type them in any app.",
+                      symbol: "checkmark.circle.fill")
     }
 
     var needsPermission: Bool { permissionRows.contains { $0.isRequired && !$0.isGranted } }
