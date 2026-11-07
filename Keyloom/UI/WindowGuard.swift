@@ -6,6 +6,9 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
 
+    /// Keyloom is a resident utility: expansion and the menu bar keep working with the library window closed.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
         return model.shouldTerminate() ? .terminateNow : .terminateCancel
