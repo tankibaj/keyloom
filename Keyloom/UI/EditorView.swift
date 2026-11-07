@@ -116,9 +116,9 @@ struct EditorView: View {
     // MARK: Header and rows
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Button { showingIcons = true } label: {
-                SnippetIconTile(icon: editor.draft.icon, size: 44)
+                SnippetIconTile(icon: editor.draft.icon, size: 32)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Icon")
