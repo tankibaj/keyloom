@@ -305,6 +305,69 @@ final class SyncStoreTests: StoreTestCase {
         XCTAssertTrue(sent.enabled, "the tag edit does not flip the record's enabled state in iCloud")
     }
 
+    func testAStaleConflictMarkerNeverHidesALaterDeliberateDisable() async throws {
+        let store = try openStore(at: try databaseURL())
+        try await store.setSyncAccount(accountA)
+        let winner = makeSnippet(name: "Winner", keyword: ";same")
+        _ = try await store.applyRemote(remote(winner), account: accountA)
+        clock.advance(by: 10)
+        let loser = makeSnippet(name: "Loser", keyword: ";same")
+        _ = try await store.applyRemote(remote(loser, fields: Data("t0".utf8)), account: accountA)
+
+        // The user gives the loser its own keyword and turns it on; that is synced.
+        let fetchedLoser = try await store.snippet(id: loser.id)
+        var fixed = try XCTUnwrap(fetchedLoser)
+        fixed.keyword = ";mine"
+        fixed.enabled = true
+        _ = try await store.update(fixed)
+        let first = try await store.nextOutgoing(account: accountA, limit: 10)
+        try await store.recordSent(first[0], systemFields: Data("t1".utf8), account: accountA)
+
+        // Later the user turns it off on purpose.
+        let fetchedFixed = try await store.snippet(id: loser.id)
+        var off = try XCTUnwrap(fetchedFixed)
+        off.enabled = false
+        _ = try await store.update(off)
+        let queued = try await store.nextOutgoing(account: accountA, limit: 10)
+        guard case .save(let sent)? = queued.first?.payload else { return XCTFail("the deliberate disable must be queued") }
+        XCTAssertFalse(sent.enabled, "a leftover conflict marker must not turn the user's disable back on")
+
+        // A remote edit that arrives before the disable was pushed does not silently overwrite it.
+        var theirs = fixed
+        theirs.tags = ["remote"]
+        theirs.revision = 5
+        let result = try await store.applyRemote(remote(theirs, fields: Data("t3".utf8)), account: accountA)
+        guard case .conflictCopied(let copyID) = result.outcome else { return XCTFail("expected a conflict, got \(result.outcome)") }
+        let copy = try await store.snippet(id: copyID)
+        XCTAssertEqual(copy?.enabled, false, "the user's disabled version survives as a named copy")
+    }
+
+    func testDeletingTheWinnerTurnsTheLoserBackOnWithoutPushingAndWithoutADuplicate() async throws {
+        let store = try openStore(at: try databaseURL())
+        try await store.setSyncAccount(accountA)
+        let winner = makeSnippet(name: "Winner", keyword: ";same")
+        _ = try await store.applyRemote(remote(winner), account: accountA)
+        clock.advance(by: 10)
+        let loser = makeSnippet(name: "Loser", keyword: ";same")
+        _ = try await store.applyRemote(remote(loser), account: accountA)
+        let before = try await store.keywordConflictDisabledIDs()
+        XCTAssertEqual(before, [loser.id])
+
+        let result = try await store.applyRemote(.delete(winner.id), account: accountA)
+        XCTAssertEqual(result.outcome, .deleted)
+        XCTAssertTrue(result.libraryChanged)
+        let back = try await store.snippet(id: loser.id)
+        XCTAssertEqual(back?.enabled, true, "the keyword is free again")
+        let notices = try await store.keywordConflictDisabledIDs()
+        XCTAssertEqual(notices, [])
+        let all = try await store.allSnippets()
+        XCTAssertEqual(KeywordConflicts.analyze(all).conflicts, [])
+        let pending = try await store.pending(account: accountA)
+        XCTAssertEqual(pending, [], "the cloud already says enabled; nothing to push")
+        let outgoing = try await store.nextOutgoing(account: accountA, limit: 10)
+        XCTAssertEqual(outgoing, [])
+    }
+
     func testCanonicalKeywordFormIsComparedWhenResolvingConflicts() async throws {
         let store = try openStore(at: try databaseURL())
         _ = try await store.create(makeSnippet(name: "Mine", keyword: ";caf\u{00E9}"))

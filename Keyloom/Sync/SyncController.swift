@@ -150,6 +150,8 @@ actor SyncController {
         guard preference.isEnabled else { return }
         if let session, case .available(let account) = cloud, account == session.account { return }
         await stopSession()
+        // A newer start may have run while the stop waited; it owns the session now.
+        guard session == nil, preference.isEnabled else { return }
         await startFor(cloud)
     }
 
@@ -311,7 +313,7 @@ actor SyncController {
             status = .signedOut
         case .accountChanged(let cloud):
             await stopSession()
-            if preference.isEnabled { await startFor(cloud) }
+            if preference.isEnabled, self.session == nil { await startFor(cloud) }
         }
     }
 

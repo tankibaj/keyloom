@@ -166,6 +166,33 @@ final class SyncControllerTests: SyncTestCase {
         XCTAssertEqual(status, .off)
     }
 
+    func testAStopOvertakenByANewerStartDoesNotResetTheJournalAccountOrStartASecondSession() async throws {
+        let device = try makeDevice()
+        let gate = Gate()
+        device.useController(onLibraryChanged: { await gate.pass() })
+        await device.enableSync()
+        cloud.putExternally(account: account, record: try externalRecord(makeSnippet(name: "Holds the stop", keyword: ";h")))
+        let syncing = Task { await device.sync() }
+        while !(await gate.hasEntered) { await Task.yield() }
+
+        // The user switches to account B: the stop of A waits for the callback that is still running.
+        device.engine.account = .available(account: "icloud:B")
+        let switching = Task { await device.controller.accountMayHaveChanged() }
+        while !(await device.controller.isDraining) { await Task.yield() }
+
+        // Meanwhile a newer start for B runs to completion.
+        await device.controller.setEnabled(true)
+        await gate.release()
+        await switching.value
+        await syncing.value
+
+        let journal = await device.store.syncAccount
+        XCTAssertEqual(journal, "icloud:B", "the late tail of A's stop must not reset the journal account of B's session")
+        XCTAssertEqual(device.engine.startCount, 2, "one session for A, one for B, not a third")
+        let status = await device.controller.status
+        XCTAssertEqual(status, .upToDate(lastSyncedAt: clock.now))
+    }
+
     // MARK: Local library is unaffected (LocalLibraryUnaffected)
 
     /// Create, edit, keyword lookup, backup and delete/restore must all work whatever sync is doing.
