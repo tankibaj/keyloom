@@ -72,6 +72,23 @@ final class RawDatabase {
     }
 
     func count(_ table: String) throws -> Int { try int("SELECT count(*) FROM \(table)") }
+
+    /// A live symbol-icon snippet row, tags included, exactly as a build before schema v5 wrote it: the current
+    /// store cannot write to a database that old, so tests that start from one seed it here.
+    func insertPreColorSnippet(_ snippet: Snippet) throws {
+        guard case .symbol(let name, _) = snippet.icon else { throw RawError(message: "symbol icons only") }
+        let template = try snippet.template.encoded().map { String(format: "%02x", $0) }.joined()
+        let keyword = snippet.keyword.map { "'\($0)'" } ?? "NULL"
+        let created = snippet.createdAt.timeIntervalSince1970
+        try execute("""
+        INSERT INTO snippets (id, name, icon_kind, icon_value, keyword, enabled, revision, template, created_at, updated_at)
+        VALUES ('\(snippet.id.uuidString)', '\(snippet.name)', 'symbol', '\(name)', \(keyword), \(snippet.enabled ? 1 : 0),
+                \(snippet.revision), x'\(template)', \(created), \(created));
+        """)
+        for (position, tag) in snippet.tags.enumerated() {
+            try execute("INSERT INTO snippet_tags (snippet_id, tag, position) VALUES ('\(snippet.id.uuidString)', '\(tag)', \(position))")
+        }
+    }
     var userVersion: Int { get throws { try int("PRAGMA user_version") } }
 }
 

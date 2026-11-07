@@ -5,8 +5,11 @@ import XCTest
 final class MigrationTests: StoreTestCase {
     private struct Boom: Error {}
 
-    /// A later schema step, defined by the test: adds a column.
-    private let v2 = Migration(version: 2) { try $0.execute("ALTER TABLE snippets ADD COLUMN note TEXT") }
+    /// A later schema step, defined by the test: adds a column. It also adds `icon_color` (schema v5's column),
+    /// because the store reads it on every snippet and this stands in for a schema newer than v1.
+    private let v2 = Migration(version: 2) {
+        try $0.execute("ALTER TABLE snippets ADD COLUMN note TEXT; ALTER TABLE snippets ADD COLUMN icon_color TEXT")
+    }
     /// A step that changes the schema and then fails.
     private let failingV3 = Migration(version: 3) { database in
         try database.execute("ALTER TABLE snippets ADD COLUMN broken TEXT")
@@ -110,7 +113,7 @@ final class MigrationTests: StoreTestCase {
     func testFrozenV1FixtureOpensAndServesItsDataThroughTheStore() async throws {
         let url = try databaseURL()
         let expected = try makeV1Fixture(at: url)
-        let store = try openStore(at: url, migrations: [Migrations.v1])
+        let store = try openStore(at: url)
         let fetched = try await store.snippet(id: fixtureID)
         XCTAssertEqual(fetched, expected)
         let pending = try await store.pending()
@@ -181,7 +184,7 @@ final class MigrationTests: StoreTestCase {
         XCTAssertFalse(try hasColumn(raw, "broken"))
         XCTAssertEqual(try raw.text("PRAGMA quick_check"), "ok")
 
-        let store = try openStore(at: url, migrations: [Migrations.v1], backupDirectory: backups)
+        let store = try openStore(at: url, backupDirectory: backups)
         let fetched = try await store.snippet(id: fixtureID)
         XCTAssertEqual(fetched, expected)
         let pending = try await store.pending()

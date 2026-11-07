@@ -15,6 +15,21 @@ final class NativeFormatTests: StoreTestCase {
         XCTAssertEqual(try NativeFormat.export(decoded.candidates.map(\.snippet), exportedAt: clock.now), data)
     }
 
+    func testSymbolColorRoundTripsAndAFileWrittenBeforeColorsStillImports() throws {
+        var colored = makeSnippet(id: ids.next(), name: "Tinted", keyword: ";t")
+        colored.icon = .symbol("star", color: .salmon)
+        let data = try NativeFormat.export([colored], exportedAt: clock.now)
+        XCTAssertEqual(try NativeFormat.decode(data).candidates.map(\.snippet.icon), [.symbol("star", color: .salmon)])
+
+        // An export from an earlier build: the icon has no color key.
+        let legacy = try nativeFile([colored]) { entries in
+            entries[0]["icon"] = ["symbol": ["_0": "star"]]
+        }
+        let decoded = try NativeFormat.decode(legacy)
+        XCTAssertEqual(decoded.malformed, [])
+        XCTAssertEqual(decoded.candidates.map(\.snippet.icon), [.symbol("star", color: nil)])
+    }
+
     func testFileCarriesFormatNameAndSchemaVersion() throws {
         let file = try jsonObject(NativeFormat.export([], exportedAt: clock.now))
         XCTAssertEqual(file["format"] as? String, "keyloom-snippets")

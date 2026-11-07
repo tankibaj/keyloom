@@ -83,7 +83,7 @@ extension SnippetStore {
                     snippet.revision = previous + 1
                     snippet.updatedAt = now()
                     try db.run("""
-                    UPDATE snippets SET name = ?, icon_kind = ?, icon_value = ?, keyword = ?, enabled = ?, pinned = ?,
+                    UPDATE snippets SET name = ?, icon_kind = ?, icon_value = ?, icon_color = ?, keyword = ?, enabled = ?, pinned = ?,
                                         revision = ?, template = ?, created_at = ?, updated_at = ?, deleted_at = NULL
                     WHERE id = ?
                     """, [.text(snippet.name)] + Self.iconValues(snippet.icon) + [
@@ -132,9 +132,9 @@ extension SnippetStore {
 
     private func insertRow(_ db: SQLiteConnection, _ snippet: Snippet) throws {
         try db.run("""
-        INSERT INTO snippets (id, name, icon_kind, icon_value, keyword, enabled, pinned, revision, template,
+        INSERT INTO snippets (id, name, icon_kind, icon_value, icon_color, keyword, enabled, pinned, revision, template,
                               created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [.uuid(snippet.id), .text(snippet.name)] + Self.iconValues(snippet.icon) + [
             .text(orNull: snippet.keyword), .bool(snippet.enabled), .bool(snippet.pinned), .int(Int64(snippet.revision)),
             .blob(try snippet.template.encoded()), .date(snippet.createdAt), .date(snippet.updatedAt),

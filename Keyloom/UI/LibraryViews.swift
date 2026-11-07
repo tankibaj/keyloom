@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Emoji as text, SF Symbol as an image; an unknown symbol name falls back so a row never renders empty.
+/// Emoji as text, SF Symbol as an image in its chosen color (secondary when it has none); an unknown symbol name
+/// falls back so a row never renders empty.
 struct SnippetIconView: View {
     let icon: SnippetIcon
 
@@ -9,9 +10,9 @@ struct SnippetIconView: View {
         switch icon {
         case .emoji(let emoji):
             Text(emoji)
-        case .symbol(let name):
+        case .symbol(let name, let color):
             Image(systemName: NSImage(systemSymbolName: name, accessibilityDescription: nil) == nil ? "doc.text" : name)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(color.map { AnyShapeStyle($0.color) } ?? AnyShapeStyle(.secondary))
         }
     }
 }

@@ -15,6 +15,8 @@ enum SnippetRecordError: Error, Equatable {
 
 /// How a snippet is stored in the user's private CloudKit database: one record per snippet, named by the
 /// snippet's UUID so every Mac addresses the same record. Device-local usage (last used, count) is never sent.
+/// `iconColor` is optional on the wire (a record without it has no color), so the record schema stays 1; an older
+/// build that saves such a record again drops the color.
 /// Only plain values go over the wire: the template travels as the same versioned JSON the local store keeps.
 enum SnippetRecord {
     static let recordType = "Snippet"
@@ -29,6 +31,7 @@ enum SnippetRecord {
         static let name = "name"
         static let iconKind = "iconKind"
         static let iconValue = "iconValue"
+        static let iconColor = "iconColor"
         static let keyword = "keyword"
         static let enabled = "enabled"
         static let pinned = "pinned"
@@ -56,14 +59,15 @@ enum SnippetRecord {
     static func fill(_ record: CKRecord, from snippet: Snippet) throws {
         let template = try snippet.template.encoded()
         guard payloadBytes(of: snippet, template: template) <= maxPayloadBytes else { throw SnippetRecordError.tooLarge }
-        let (kind, value): (String, String) = switch snippet.icon {
-        case .emoji(let value): ("emoji", value)
-        case .symbol(let value): ("symbol", value)
+        let (kind, value, color): (String, String, IconColor?) = switch snippet.icon {
+        case .emoji(let value): ("emoji", value, nil)
+        case .symbol(let value, let color): ("symbol", value, color)
         }
         record[Field.schema] = currentSchema as CKRecordValue
         record[Field.name] = snippet.name as CKRecordValue
         record[Field.iconKind] = kind as CKRecordValue
         record[Field.iconValue] = value as CKRecordValue
+        record[Field.iconColor] = color.map { $0.rawValue as CKRecordValue }
         record[Field.keyword] = snippet.keyword.map { $0 as CKRecordValue }
         record[Field.enabled] = (snippet.enabled ? 1 : 0) as CKRecordValue
         record[Field.pinned] = (snippet.pinned ? 1 : 0) as CKRecordValue
@@ -91,7 +95,7 @@ enum SnippetRecord {
         let kind = try required(Field.iconKind, as: String.self)
         let value = try required(Field.iconValue, as: String.self)
         guard kind == "emoji" || kind == "symbol" else { throw SnippetRecordError.missingField(Field.iconKind) }
-        return Snippet(id: id, name: try required(Field.name, as: String.self), icon: kind == "emoji" ? .emoji(value) : .symbol(value),
+        return Snippet(id: id, name: try required(Field.name, as: String.self), icon: SnippetStore.icon(kind: kind, value: value, color: record[Field.iconColor] as? String),
                        keyword: record[Field.keyword] as? String, enabled: try required(Field.enabled, as: Int.self) == 1,
                        tags: (record[Field.tags] as? [String]) ?? [], pinned: (record[Field.pinned] as? Int) == 1,
                        revision: try required(Field.revision, as: Int.self), template: template,
