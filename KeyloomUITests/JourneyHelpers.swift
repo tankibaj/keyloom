@@ -22,7 +22,7 @@ extension KeyloomUITestCase {
     }
 
     /// Waits until `predicate` holds for `element`, polling through XCTest's expectation machinery.
-    func wait(_ element: XCUIElement, until predicate: String, timeout: TimeInterval = 10) -> Bool {
+    func wait(_ element: XCUIElement, until predicate: String, timeout: TimeInterval = 4) -> Bool {
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: predicate), object: element)
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
     }
@@ -36,7 +36,7 @@ extension KeyloomUITestCase {
     /// Opens a blank editor and waits for it.
     func startNewSnippet() throws {
         let button = library.buttons["library.newSnippet"]
-        try need(button, "New Snippet button")
+        try need(button, "New Snippet button", timeout: 12)
         button.click()
         if !nameField.waitForExistence(timeout: 4) { button.click() }
         try need(nameField, "editor name field")
@@ -69,4 +69,10 @@ extension KeyloomUITestCase {
     }
 
     func menuItem(_ menu: String, _ item: String) -> XCUIElement { app.menuBars.menuBarItems[menu].menus.menuItems[item] }
+
+    /// Polls `condition` (re-evaluated by XCTest's expectation machinery) until it holds or `timeout` passes.
+    func waitUntil(timeout: TimeInterval = 4, _ condition: @escaping @MainActor () -> Bool) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in MainActor.assumeIsolated { condition() } }, object: nil)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
 }

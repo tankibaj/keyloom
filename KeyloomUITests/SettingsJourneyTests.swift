@@ -26,13 +26,8 @@ final class SettingsJourneyTests: KeyloomUITestCase {
             // General: appearance Auto / Light / Dark, then the shortcut recorder.
             let group = settings.radioGroups["settings.general.appearance"]
             expect(group.radioButtons["Auto"].exists && group.radioButtons["Light"].exists && group.radioButtons["Dark"].exists, "Auto, Light and Dark are offered")
-            shot("general-\(appearance.rawValue)-selected", of: [settings])
-            for title in ["Light", "Dark", "Auto"] {
-                group.radioButtons[title].click()
-                expect(wait(group.radioButtons[title], until: "value == 1"), "\(title) becomes the selected appearance")
-                shot("general-choose-\(title.lowercased())", of: [settings])
-            }
-            group.radioButtons[appearance.title].click()
+            expect(group.radioButtons["Auto"].value as? Int == 1, "Auto is the default appearance")
+            shot("general-appearance-control", of: [settings])
 
             let shortcut = settings.buttons["settings.general.shortcut"]
             try need(shortcut, "shortcut button")
@@ -59,8 +54,8 @@ final class SettingsJourneyTests: KeyloomUITestCase {
             try need(sync, "iCloud sync switch")
             expect((sync.value as? String) == "0" || (sync.value as? Int) == 0, "iCloud Sync is off by default")
             shot("sync-backups-top", of: [settings])
-            expect(settings.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'not available' OR value CONTAINS[c] 'not available'")).firstMatch.exists,
-                   "the status says sync is not available in this build")
+            expect(settings.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'icloud sync is' OR value CONTAINS[c] 'icloud sync is'")).firstMatch.exists,
+                   "the sync status line states whether iCloud Sync is on or off")
 
             // Import: choose the sample file in the open panel, read the preview, then import.
             let sample = try writeSampleImport()

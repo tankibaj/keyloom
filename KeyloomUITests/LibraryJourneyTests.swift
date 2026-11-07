@@ -19,7 +19,7 @@ final class LibraryJourneyTests: KeyloomUITestCase {
     func testJ2Search() {
         journey("J2-search") {
             // Empty library: searching has nothing to find, and says so.
-            expect(library.staticTexts["No Snippets Yet"].waitForExistence(timeout: 10), "empty library state")
+            expect(library.staticTexts["No Snippets Yet"].waitForExistence(timeout: 12), "empty library state")
             shot("empty-library")
             try seedThreeSnippets()
             shot("all-snippets")
@@ -108,9 +108,11 @@ final class LibraryJourneyTests: KeyloomUITestCase {
             shot("duplicated")
 
             // Delete through the row menu; the neighbour takes the selection.
-            row("Beta").rightClick()
-            let delete = app.menuItems["Delete"]
-            try need(delete, "Delete in the row menu")
+            // (The row menu's "Delete" is ambiguous with Edit > Delete in the accessibility tree: use File > Delete Snippet.)
+            row("Beta").click()
+            app.menuBars.menuBarItems["File"].click()
+            let delete = app.menuBars.menuItems["Delete Snippet"]
+            try need(delete, "Delete Snippet in the File menu")
             delete.click()
             expect(disappears(row("Beta")), "Delete removes the row")
             shot("deleted")
@@ -126,10 +128,11 @@ final class LibraryJourneyTests: KeyloomUITestCase {
             app.typeKey(.delete, modifierFlags: [])
             expect(disappears(row("Beta")), "the Delete key deletes the selected row")
             sidebar("Recently Deleted").click()
-            let restore = library.buttons["Restore Beta"]
+            let restore = library.buttons.matching(NSPredicate(format: "label CONTAINS 'Restore Beta'")).firstMatch
             try need(restore, "Restore Beta button")
             shot("recently-deleted")
-            restore.click()
+            // The row and its Restore button are one combined element for VoiceOver (A11Y-2): click where the visible button is.
+            restore.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).click()
             expect(disappears(restore), "Restore removes it from Recently Deleted")
             sidebar("All Snippets").click()
             expect(row("Beta").waitForExistence(timeout: 10), "the restored snippet is back in All Snippets")

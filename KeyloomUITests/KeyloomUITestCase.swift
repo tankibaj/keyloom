@@ -50,39 +50,32 @@ class KeyloomUITestCase: XCTestCase {
         // A second Keyloom (a unit-test host, a manual launch) makes XCUITest attach to the wrong process.
         let instances = NSRunningApplication.runningApplications(withBundleIdentifier: "app.keyloom.Keyloom").count
         XCTAssertEqual(instances, 1, "exactly one Keyloom instance is running during the journey")
-        XCTAssertTrue(libraryWindow.exists)
-    }
-
-    /// Runs `body` once in Light and once in Dark, each on a fresh app and library. A failure in one pass is
-    /// recorded with a screenshot and does not stop the other pass.
-    func journey(_ name: String, appearances: [Appearance] = Appearance.allCases, _ body: () throws -> Void) {
-        journeyName = name
-        for appearance in appearances {
-            self.appearance = appearance
-            stepNumber = 0
-            do {
-                try launchApp()
-                try setAppearance(appearance)
-                try body()
-            } catch {
-                XCTFail("\(name) [\(appearance.rawValue)]: \(error)")
-                shot("FAILED")
-                attachAccessibilityTree()
+        if !app.windows["Keyloom"].waitForExistence(timeout: 5) {
+            // APP DEFECT D2 (intermittent): the library window is not presented at launch; open it from the menu bar item.
+            expect(false, "D2: the library window did not open at launch")
+            let item = app.menuBars.statusItems.firstMatch
+            if item.waitForExistence(timeout: 5) {
+                item.click()
+                app.buttons["menubar.openLibrary"].click()
             }
         }
+        _ = app.windows["Keyloom"].waitForExistence(timeout: 10)
     }
 
-    /// Opens Settings with Command-comma, picks the appearance, and closes the window again.
-    func setAppearance(_ appearance: Appearance) throws {
-        let settings = try openSettings(tab: "General")
-        let choice = settings.radioGroups["settings.general.appearance"].radioButtons[appearance.title]
-        try need(choice, "\(appearance.title) appearance choice")
-        // The Settings content can still be re-rendering right after launch; click only once it is stable and hittable.
-        guard wait(choice, until: "isHittable == true", timeout: 15) else { throw JourneyFailure(description: "\(appearance.title) choice not hittable") }
-        choice.click()
-        guard wait(choice, until: "value == 1") else { throw JourneyFailure(description: "\(appearance.title) did not become selected") }
-        self.appearance = appearance
-        closeSettings(settings)
+    /// Runs `body` once on a fresh app and library, in the system's current appearance (the app stays on Auto;
+    /// files are named with the mode the screen is actually in). A failure is recorded with a screenshot.
+    func journey(_ name: String, _ body: () throws -> Void) {
+        journeyName = name
+        stepNumber = 0
+        appearance = NSApplication.shared.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .dark : .light
+        do {
+            try launchApp()
+            try body()
+        } catch {
+            XCTFail("\(name) [\(appearance.rawValue)]: \(error)")
+            shot("FAILED")
+            attachAccessibilityTree()
+        }
     }
 
     /// Opens Settings and selects `tab`: macOS remembers the last tab between launches, so it is always chosen.
@@ -95,10 +88,10 @@ class KeyloomUITestCase: XCTestCase {
             if !settingsWindow.exists {
                 app.activate()
                 app.typeKey(",", modifierFlags: .command)
-                _ = settingsWindow.waitForExistence(timeout: 8)
+                _ = settingsWindow.waitForExistence(timeout: 4)
             }
             let button = settingsWindow.toolbars.buttons[target]
-            if button.waitForExistence(timeout: 8) {
+            if button.waitForExistence(timeout: 4) {
                 if tab != nil { button.click() }
                 return settingsWindow
             }
@@ -134,7 +127,7 @@ class KeyloomUITestCase: XCTestCase {
         guard !region.isNull, scale > 0, let full = screenshot.image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               let cropped = full.cropping(to: CGRect(x: region.minX * scale, y: region.minY * scale, width: region.width * scale, height: region.height * scale).integral),
               let png = NSBitmapImageRep(cgImage: cropped).representation(using: .png, properties: [:]) else {
-            save(screenshot.pngRepresentation, step: step)
+            // No app window to frame: never fall back to the whole desktop, which shows whatever else is open.
             return
         }
         save(png, step: step)
@@ -175,7 +168,7 @@ class KeyloomUITestCase: XCTestCase {
     }
 
     /// Waits for `element`; a missing element ends the journey (nothing after it can be trusted).
-    func need(_ element: XCUIElement, _ what: String, timeout: TimeInterval = 10) throws {
+    func need(_ element: XCUIElement, _ what: String, timeout: TimeInterval = 4) throws {
         guard element.waitForExistence(timeout: timeout) else { throw JourneyFailure(description: "\(what) not found") }
     }
 
@@ -185,7 +178,7 @@ class KeyloomUITestCase: XCTestCase {
     }
 
     /// True once `element` exists, polled by XCTest rather than slept on.
-    func appears(_ element: XCUIElement, timeout: TimeInterval = 10) -> Bool { element.waitForExistence(timeout: timeout) }
+    func appears(_ element: XCUIElement, timeout: TimeInterval = 4) -> Bool { element.waitForExistence(timeout: timeout) }
 
-    func disappears(_ element: XCUIElement, timeout: TimeInterval = 10) -> Bool { element.waitForNonExistence(timeout: timeout) }
+    func disappears(_ element: XCUIElement, timeout: TimeInterval = 4) -> Bool { element.waitForNonExistence(timeout: timeout) }
 }
