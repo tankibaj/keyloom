@@ -193,6 +193,42 @@ final class SyncControllerTests: SyncTestCase {
         XCTAssertEqual(status, .upToDate(lastSyncedAt: clock.now))
     }
 
+    /// W (older) and L (younger, forced off) as the store keeps them after a conflict; W is then deleted locally.
+    private func makeFreedLoser(in device: SyncDevice) async throws -> Snippet {
+        let winner = makeSnippet(name: "Winner", keyword: ";same")
+        _ = try await device.store.applyRemote(.upsert(winner, systemFields: nil), account: account)
+        clock.advance(by: 10)
+        let loser = makeSnippet(name: "Loser", keyword: ";same")
+        _ = try await device.store.applyRemote(.upsert(loser, systemFields: Data("l".utf8)), account: account)
+        let forced = try await device.store.snippet(id: loser.id)
+        XCTAssertEqual(forced?.enabled, false)
+        try await device.store.delete(id: winner.id)
+        return loser
+    }
+
+    func testTheLibraryIsToldWhenAPushReEnablesAFreedLoser() async throws {
+        let device = try makeDevice()
+        await device.enableSync()
+        let loser = try await makeFreedLoser(in: device)
+        XCTAssertEqual(device.libraryReloads.count, 0)
+
+        await device.sync()
+
+        let reenabled = try await device.store.snippet(id: loser.id)
+        XCTAssertEqual(reenabled?.enabled, true)
+        XCTAssertEqual(device.libraryReloads.count, 1, "the matcher and UI must reload, or the keyword stays dead until some other change")
+    }
+
+    func testTheLibraryIsToldWhenStartingSyncReEnablesAFreedLoser() async throws {
+        let device = try makeDevice()
+        let loser = try await makeFreedLoser(in: device)
+        await device.enableSync()
+
+        let reenabled = try await device.store.snippet(id: loser.id)
+        XCTAssertEqual(reenabled?.enabled, true)
+        XCTAssertEqual(device.libraryReloads.count, 1, "the library loaded before sync started, so it must reload")
+    }
+
     // MARK: Local library is unaffected (LocalLibraryUnaffected)
 
     /// Create, edit, keyword lookup, backup and delete/restore must all work whatever sync is doing.

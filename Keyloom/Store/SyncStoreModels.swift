@@ -59,4 +59,18 @@ struct SyncPreparation: Sendable, Equatable {
     let adopted: Int
     /// Snippets that differ from the account's ancestor and had no queued intent.
     let enqueued: Int
+    /// A conflict-disabled snippet whose keyword is free was turned back on: the library must reload.
+    let reenabled: Bool
+
+    init(adopted: Int, enqueued: Int, reenabled: Bool = false) {
+        self.adopted = adopted
+        self.enqueued = enqueued
+        self.reenabled = reenabled
+    }
+}
+
+struct OutgoingBatch: Sendable, Equatable {
+    let changes: [OutgoingChange]
+    /// Settling conflict markers turned a snippet back on: the library must reload.
+    let libraryChanged: Bool
 }

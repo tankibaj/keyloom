@@ -368,6 +368,70 @@ final class SyncStoreTests: StoreTestCase {
         XCTAssertEqual(outgoing, [])
     }
 
+    /// W (older) holds the keyword, L (younger) is forced off; then W is deleted locally, which frees the keyword
+    /// before any push has re-enabled L.
+    private func storeWithFreedLoser() async throws -> (store: SnippetStore, winner: Snippet, loser: Snippet) {
+        let store = try openStore(at: try databaseURL())
+        try await store.setSyncAccount(accountA)
+        let winner = makeSnippet(name: "Winner", keyword: ";same")
+        _ = try await store.applyRemote(remote(winner), account: accountA)
+        clock.advance(by: 10)
+        let loser = makeSnippet(name: "Loser", keyword: ";same")
+        _ = try await store.applyRemote(remote(loser, fields: Data("l0".utf8)), account: accountA)
+        try await store.delete(id: winner.id)
+        return (store, winner, loser)
+    }
+
+    func testARemoteEditOfAFreedLoserAppliesCleanlyWithoutASpuriousConflictCopy() async throws {
+        let (store, _, loser) = try await storeWithFreedLoser()
+        var edited = loser
+        edited.tags = ["remote"]
+        let result = try await store.applyRemote(remote(edited, fields: Data("l1".utf8)), account: accountA)
+        XCTAssertEqual(result.outcome, .applied, "the re-enabled loser equals its ancestor, so the edit is not a conflict")
+        let all = try await store.allSnippets()
+        XCTAssertEqual(all.map(\.name), ["Loser"])
+        XCTAssertEqual(all.first?.tags, ["remote"])
+        XCTAssertEqual(all.first?.enabled, true)
+        let pending = try await store.pending(account: accountA)
+        XCTAssertEqual(pending.count, 1, "only the winner's delete is queued, no conflict copy")
+        XCTAssertEqual(pending.first?.operation, .delete)
+    }
+
+    func testARemoteDeleteOfAFreedLoserDeletesItWithoutASpuriousConflictCopy() async throws {
+        let (store, _, loser) = try await storeWithFreedLoser()
+        let result = try await store.applyRemote(.delete(loser.id), account: accountA)
+        XCTAssertEqual(result.outcome, .deleted)
+        let all = try await store.allSnippets()
+        XCTAssertEqual(all, [])
+        let pending = try await store.pending(account: accountA)
+        XCTAssertEqual(pending.count, 1, "no conflict copy was journaled")
+    }
+
+    func testMarkersFromTheFirstConflictSchemaAreBackfilledSoTheyStayValid() async throws {
+        let url = try databaseURL()
+        let backups = url.deletingLastPathComponent().appendingPathComponent("backups")
+        let old = try openStore(at: url, migrations: [Migrations.v1, Migrations.v2, Migrations.v3], backupDirectory: backups)
+        let winner = try await old.create(makeSnippet(name: "Winner", keyword: ";same"))
+        clock.advance(by: 10)
+        var loserSource = makeSnippet(name: "Loser", keyword: ";same", enabled: false)
+        loserSource.revision = 1
+        let loser = try await old.create(loserSource)
+        var retagged = loser
+        retagged.tags = ["t"]
+        let current = try await old.update(retagged)
+        XCTAssertEqual(current.revision, 2)
+        await old.close()
+        // A v3 marker has no revision column.
+        try RawDatabase(url).execute("INSERT INTO sync_conflict_disabled (record_id) VALUES ('\(loser.id.uuidString)')")
+
+        let store = try openStore(at: url, backupDirectory: backups)
+        let raw = try RawDatabase(url)
+        XCTAssertEqual(try raw.int("SELECT revision FROM sync_conflict_disabled"), 2, "backfilled from the snippet's revision")
+        let forced = try await store.keywordConflictDisabledIDs()
+        XCTAssertEqual(forced, [loser.id], "the forced disable is still recognized, not mistaken for the user's own")
+        XCTAssertNotEqual(winner.id, loser.id)
+    }
+
     func testCanonicalKeywordFormIsComparedWhenResolvingConflicts() async throws {
         let store = try openStore(at: try databaseURL())
         _ = try await store.create(makeSnippet(name: "Mine", keyword: ";caf\u{00E9}"))
