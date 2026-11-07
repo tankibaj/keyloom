@@ -18,7 +18,7 @@ struct KeyloomApp: App {
                 .onAppear {
                     appDelegate.model = environment.model
                     appDelegate.shutdown = { [environment] in await environment.shutdown() }
-                    environment.model.quitAction = { NSApp.terminate(nil) }
+                    environment.model.quitAction = { AppDelegate.requestTermination() }
                 }
         }
         .windowResizability(.contentMinSize)

@@ -7,19 +7,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
     var shutdown: (@MainActor () async -> Void)?
     var replyToTermination: @MainActor (Bool) -> Void = { NSApp.reply(toApplicationShouldTerminate: $0) }
+    /// A stuck sync shutdown must not keep the app from quitting.
+    var shutdownTimeout: Duration = .seconds(3)
+    var sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    private var terminating = false
 
     /// Keyloom is a resident utility: expansion and the menu bar keep working with the library window closed.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // A second request while the reply is pending must neither start another shutdown nor reply twice.
+        if terminating { return .terminateLater }
         if let model, !model.shouldTerminate() { return .terminateCancel }
         guard let shutdown else { return .terminateNow }
-        // The sync engine stops first; AppKit waits for the reply.
-        Task {
-            await shutdown()
-            replyToTermination(true)
+        terminating = true
+        // The sync engine stops first; AppKit waits for the reply, which comes after at most `shutdownTimeout`.
+        var replied = false
+        let reply = { @MainActor [weak self] in
+            guard !replied else { return }
+            replied = true
+            self?.terminating = false
+            self?.replyToTermination(true)
         }
+        let sleep = sleep, timeout = shutdownTimeout
+        let job = Task { await shutdown(); reply() }
+        // A cancelled sleep throws: that is not a timeout.
+        Task { if (try? await sleep(timeout)) != nil { reply(); job.cancel() } }
         return .terminateLater
+    }
+
+    /// Quits from inside a Swift task (the dirty-edit sheet's button). `terminate` waits for the termination reply in
+    /// a nested run loop; called synchronously from a main-actor task, that task keeps the main actor, so the task
+    /// sending the reply never runs and the app hangs. Leaving the task first lets the reply run inside the loop.
+    static func requestTermination(_ terminate: @escaping @MainActor () -> Void = { NSApp.terminate(nil) }) {
+        DispatchQueue.main.async { MainActor.assumeIsolated { terminate() } }
     }
 }
 
