@@ -53,7 +53,9 @@ enum RichTextConverter {
         var traits: NSFontDescriptor.SymbolicTraits = []
         if style.contains(.bold) { traits.insert(.bold) }
         if style.contains(.italic) { traits.insert(.italic) }
-        let font = NSFont(descriptor: baseFont.fontDescriptor.withSymbolicTraits(traits), size: baseFont.pointSize) ?? baseFont
+        let font = isToken
+            ? TokenPill.font(traits: traits)
+            : NSFont(descriptor: baseFont.fontDescriptor.withSymbolicTraits(traits), size: baseFont.pointSize) ?? baseFont
         var result: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.textColor]
         if style.contains(.underline) { result[.underlineStyle] = NSUnderlineStyle.single.rawValue }
         if kind != .plain {
@@ -64,8 +66,9 @@ enum RichTextConverter {
         }
         if isMarker { result[listMarkerKey] = true }
         if isToken {
+            // The pill itself is drawn by `TokenPillFragment`; the run only carries the key, font and color.
             result[tokenKey] = true
-            result[.backgroundColor] = NSColor.controlAccentColor.withAlphaComponent(0.3)
+            result[.foregroundColor] = TokenPill.text
         }
         return result
     }

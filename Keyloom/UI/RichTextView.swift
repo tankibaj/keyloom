@@ -37,7 +37,7 @@ struct RichTextView: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.documentView = textView
         scroll.hasVerticalScroller = true
-        scroll.borderType = .bezelBorder
+        scroll.borderType = .noBorder   // the editor pane draws its own rounded border
         controller.attach(textView)
         return scroll
     }

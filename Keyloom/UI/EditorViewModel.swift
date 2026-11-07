@@ -43,6 +43,37 @@ struct KeywordFeedback: Equatable {
     var blocksEnabling: Bool { !conflicts.isEmpty }
 }
 
+/// The one-word verdict beside the keyword field. Status is always a word and an icon, never color alone.
+enum KeywordStatus: Equatable {
+    case none
+    /// A keyword with expansion off: it can never conflict.
+    case off
+    case free
+    /// Overlaps and ignored keywords: allowed, worth a look.
+    case overlap(String)
+    case conflict(String)
+
+    var title: String? {
+        switch self {
+        case .none: nil
+        case .off: "Expansion off"
+        case .free: "No conflicts"
+        case .overlap: "Overlaps another"
+        case .conflict: "Keyword in use"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .none: ""
+        case .off: "pause.circle"
+        case .free: "checkmark.circle.fill"
+        case .overlap: "exclamationmark.triangle.fill"
+        case .conflict: "exclamationmark.octagon.fill"
+        }
+    }
+}
+
 enum Preview: Equatable {
     case rendered(RenderedSnippet)
     case unavailable(String)
@@ -69,6 +100,8 @@ final class EditorViewModel {
     /// The on-device assistance action for this editor; nil until the app wires the service in.
     var assistance: AssistanceEditorModel?
     private(set) var keywordFeedback = KeywordFeedback()
+    /// Device-local use count and last use of the open snippet; nil for a new snippet.
+    private(set) var usage: SnippetUsage?
     /// Try Expansion: values the user typed for arguments; the rest fall back to default, first choice, then a stand-in.
     var sampleArguments: [String: String] = [:]
     @ObservationIgnored private let draftID = UUID()
@@ -87,7 +120,7 @@ final class EditorViewModel {
     }
 
     static func liveEnvironment() -> RenderEnvironment {
-        RenderEnvironment(date: Date(), timeZone: .current, locale: .current, makeUUID: { UUID() }, clipboardText: { "Clipboard text" })
+        RenderEnvironment(date: Date(), timeZone: .current, locale: .current, makeUUID: { UUID() }, clipboardText: { "(clipboard)" })
     }
 
     var isDirty: Bool { draft != baseline }
@@ -96,6 +129,34 @@ final class EditorViewModel {
     }
 
     var argumentRequirements: [ArgumentRequirement] { TemplateRenderer.requiredArguments(in: draft.body) }
+
+    var keywordStatus: KeywordStatus {
+        guard draft.normalizedKeyword != nil else { return .none }
+        guard draft.enabled else { return .off }
+        if let conflict = keywordFeedback.conflicts.first { return .conflict(conflict) }
+        if let warning = keywordFeedback.warnings.first { return .overlap(warning) }
+        return .free
+    }
+
+    /// Reads this device's usage of the open snippet. Never reads the snippet text.
+    func refreshUsage() async {
+        guard case .existing(let id) = target else {
+            usage = nil
+            return
+        }
+        usage = try? await library.store.usage(of: id)
+    }
+
+    /// "Used 12 times on this Mac · last used 2 days ago". Counts and a date only.
+    var usageLine: String { Self.usageLine(usage) }
+
+    static func usageLine(_ usage: SnippetUsage?) -> String {
+        guard let usage, usage.useCount > 0 else { return "Not used yet on this Mac." }
+        let times = usage.useCount == 1 ? "Used once" : "Used \(usage.useCount) times"
+        guard let last = usage.lastUsedAt else { return "\(times) on this Mac." }
+        let relative = last.formatted(.relative(presentation: .named, unitsStyle: .wide).locale(.current))
+        return "\(times) on this Mac · last used \(relative)"
+    }
 
     /// Asks the library about the draft's keyword. Call when the keyword or the enabled switch changes.
     func refreshKeywordFeedback() async {
@@ -193,6 +254,7 @@ final class EditorViewModel {
             baseline = merged
             draft = merged
             if bodyChanged { bodyController.load(merged.body) }
+            await refreshUsage()
             return true
         } catch {
             errorMessage = UserMessage.describe(error)

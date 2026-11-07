@@ -1,24 +1,38 @@
 import SwiftUI
 
-/// The detail column: name, icon, keyword, tags, formatted body with its toolbar, and the live preview.
+/// The detail column: a borderless title, keyword and tags as one-line rows, the template beside (or, in a narrow
+/// column, above) its live "Expands to" result, and this device's usage of the snippet.
 struct EditorView: View {
     @Bindable var editor: EditorViewModel
     @State private var showingIcons = false
     @State private var showingArgument = false
     @State private var argumentForm = ArgumentForm()
+    @State private var width: CGFloat = 0
+
+    private static let labelWidth: CGFloat = 62
+    /// Two panes of at least 320 pt each, the gap and the margins.
+    private static let sideBySideWidth: CGFloat = 700
+
+    private var sideBySide: Bool { width >= Self.sideBySideWidth }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 header
-                fields
-                formattingBar
-                RichTextView(controller: editor.bodyController)
-                    .frame(minHeight: 200)
-                preview
+                keywordSection
+                tagsRow
+                panes
+                Text(editor.usageLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("editor.usage")
             }
-            .padding(20)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 18)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .task(id: editor.target) { await editor.refreshUsage() }
         .onChange(of: editor.errorMessage) { _, message in
             if let message { AccessibilityNotification.Announcement(message).post() }
         }
@@ -29,56 +43,147 @@ struct EditorView: View {
         }
     }
 
+    // MARK: Header and rows
+
     private var header: some View {
         HStack(spacing: 12) {
             Button { showingIcons = true } label: {
-                SnippetIconView(icon: editor.draft.icon).font(.largeTitle).frame(width: 44, height: 44)
+                SnippetIconTile(icon: editor.draft.icon, size: 44)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
             .accessibilityLabel("Icon")
             .accessibilityValue(editor.draft.icon.spoken)
             .help("Choose an icon")
             .popover(isPresented: $showingIcons) { IconPickerView(icon: $editor.draft.icon) }
             TextField("Name", text: $editor.draft.name)
-                .textFieldStyle(.roundedBorder)
-                .font(.title2)
+                .textFieldStyle(.plain)
+                .font(.system(size: 22, weight: .semibold))
                 .accessibilityLabel("Snippet name")
                 .accessibilityIdentifier("editor.name")
         }
     }
 
-    private var fields: some View {
-        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {
-            GridRow {
-                Text("Keyword").gridColumnAlignment(.trailing)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        TextField("::keyword", text: $editor.draft.keyword)
-                            .font(.body.monospaced())
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel("Expansion keyword")
-                        Toggle("Expand automatically", isOn: $editor.draft.enabled).lineLimit(1)
-                    }
-                    if let hint = editor.keywordHint { Text(hint).font(.caption).foregroundStyle(.secondary) }
-                    ForEach(editor.keywordFeedback.conflicts, id: \.self) { message in
-                        Label(message + " Change the keyword or turn off Expand automatically to save.", systemImage: "exclamationmark.octagon.fill")
-                            .font(.caption).foregroundStyle(.red)
-                    }
-                    ForEach(editor.keywordFeedback.warnings, id: \.self) { message in
-                        Label(message, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.secondary)
-                    }
+    private var keywordSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    rowLabel("Keyword")
+                    keywordField
+                    keywordPill
+                    Spacer(minLength: 8)
+                    expandToggle
                 }
-                .task(id: KeywordKey(keyword: editor.draft.keyword, enabled: editor.draft.enabled)) {
-                    await editor.refreshKeywordFeedback()
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        rowLabel("Keyword")
+                        keywordField
+                        keywordPill
+                    }
+                    expandToggle.padding(.leading, Self.labelWidth + 10)
                 }
             }
-            GridRow {
-                Text("Tags")
-                TextField("Separate tags with commas", text: $editor.draft.tagsText)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Tags")
+            VStack(alignment: .leading, spacing: 4) {
+                if let hint = editor.keywordHint { Text(hint).font(.caption).foregroundStyle(.secondary) }
+                ForEach(editor.keywordFeedback.conflicts, id: \.self) { message in
+                    Label(message + " Change the keyword or turn off Expand automatically to save.", systemImage: "exclamationmark.octagon.fill")
+                        .font(.caption).foregroundStyle(.red)
+                }
+                ForEach(editor.keywordFeedback.warnings, id: \.self) { message in
+                    Label(message, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.leading, Self.labelWidth + 10)
+        }
+        .task(id: KeywordKey(keyword: editor.draft.keyword, enabled: editor.draft.enabled)) {
+            await editor.refreshKeywordFeedback()
+        }
+    }
+
+    private func rowLabel(_ title: String) -> some View {
+        Text(title).foregroundStyle(.secondary).frame(width: Self.labelWidth, alignment: .leading)
+    }
+
+    private var keywordField: some View {
+        TextField("::keyword", text: $editor.draft.keyword)
+            .textFieldStyle(.plain)
+            .font(.body.monospaced())
+            .fieldBackground()
+            .frame(width: 150)
+            .accessibilityLabel("Expansion keyword")
+    }
+
+    @ViewBuilder
+    private var keywordPill: some View {
+        let status = editor.keywordStatus
+        if let title = status.title {
+            let tint: Color = switch status {
+            case .free: .green
+            case .conflict: .red
+            case .overlap: .orange
+            default: .secondary
+            }
+            Label(title, systemImage: status.symbol)
+                .font(.caption)
+                .foregroundStyle(tint)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 2)
+                .background(tint.opacity(0.16), in: Capsule())
+                .fixedSize()
+                .accessibilityIdentifier("editor.keywordStatus")
+        }
+    }
+
+    private var expandToggle: some View {
+        HStack(spacing: 8) {
+            Text("Expand automatically").foregroundStyle(.secondary).lineLimit(1)
+            Toggle("Expand automatically", isOn: $editor.draft.enabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+        }
+        .fixedSize()
+    }
+
+    private var tagsRow: some View {
+        HStack(spacing: 10) {
+            rowLabel("Tags")
+            TextField("Separate tags with commas", text: $editor.draft.tagsText)
+                .textFieldStyle(.plain)
+                .fieldBackground()
+                .accessibilityLabel("Tags")
+        }
+    }
+
+    // MARK: Template and result
+
+    @ViewBuilder
+    private var panes: some View {
+        if sideBySide {
+            HStack(alignment: .top, spacing: 12) {
+                templatePane.frame(maxWidth: .infinity)
+                expandsToPane.frame(maxWidth: .infinity)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                templatePane
+                expandsToPane
             }
         }
+    }
+
+    private var templatePane: some View {
+        VStack(spacing: 0) {
+            formattingBar
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color(nsColor: .windowBackgroundColor))
+            Divider()
+            RichTextView(controller: editor.bodyController)
+                .frame(minHeight: 180)
+            tokenBar
+        }
+        .paneChrome()
     }
 
     /// The full bar when it fits; otherwise the placeholder and rewrite menus shrink to their icons, so nothing is clipped.
@@ -107,10 +212,7 @@ struct EditorView: View {
                 placeholderButton("Clipboard", .clipboard)
                 placeholderButton("Cursor Position", .cursor).disabled(editor.bodyController.hasCursorToken)
                 Divider()
-                Button("Argument…") {
-                    argumentForm = ArgumentForm()
-                    showingArgument = true
-                }
+                Button("Argument…") { beginArgument() }
             } label: {
                 Label("Insert Placeholder", systemImage: "curlybraces")
             }
@@ -119,6 +221,48 @@ struct EditorView: View {
             .fixedSize()
             if let assistance = editor.assistance, assistance.isOffered { AssistanceMenu(assistance: assistance, compact: compact) }
         }
+    }
+
+    /// One click per placeholder, drawn as the pill it becomes. Hidden when the pane is too narrow; the Insert
+    /// Placeholder menu above always has the same items.
+    private var tokenBar: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                Text("Insert").font(.caption).foregroundStyle(.secondary)
+                tokenButton("{argument}", help: "Insert an argument you fill in when it expands") { beginArgument() }
+                tokenButton("{date}", help: "Insert today’s date") { insert(.date(format: nil)) }
+                tokenButton("{time}", help: "Insert the current time") { insert(.time(format: nil)) }
+                tokenButton("{clipboard}", help: "Insert the clipboard text") { insert(.clipboard) }
+                tokenButton("{cursor}", help: "Place the cursor after expansion") { insert(.cursor) }
+                    .disabled(editor.bodyController.hasCursorToken)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .overlay(alignment: .top) { Divider() }
+            Color.clear.frame(height: 0)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Insert placeholder")
+    }
+
+    private func tokenButton(_ title: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: TokenPill.fontSize, design: .monospaced))
+                .foregroundStyle(Color(nsColor: TokenPill.text))
+                .padding(.horizontal, 5)
+                .background(Color(nsColor: TokenPill.fill), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel("Insert \(title)")
+    }
+
+    private func beginArgument() {
+        argumentForm = ArgumentForm()
+        showingArgument = true
     }
 
     private func styleToggle(_ title: String, systemImage: String, style: TextStyle, key: KeyEquivalent) -> some View {
@@ -152,22 +296,30 @@ struct EditorView: View {
         }
     }
 
-    private var preview: some View {
-        GroupBox("Preview and Try Expansion") {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(editor.argumentRequirements, id: \.name) { requirement in
-                    sampleField(requirement)
-                }
-                switch editor.preview {
-                case .rendered(let rendered):
-                    Text(PreviewText.attributed(rendered)).textSelection(.enabled)
-                case .unavailable(let message):
-                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
-                }
+    private var expandsToPane: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("EXPANDS TO")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            ForEach(editor.argumentRequirements, id: \.name) { requirement in
+                sampleField(requirement)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(4)
+            switch editor.preview {
+            case .rendered(let rendered):
+                Text(PreviewText.attributed(rendered))
+                    .lineSpacing(3)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            case .unavailable(let message):
+                Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .paneChrome()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Preview and Try Expansion")
     }
@@ -186,10 +338,12 @@ struct EditorView: View {
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Sample for \(requirement.name)")
             }
+            .font(.callout)
         } else {
             Picker("Sample for \(requirement.name)", selection: sample) {
                 ForEach(requirement.choices, id: \.self) { Text($0).tag($0) }
             }
+            .font(.callout)
             .accessibilityLabel("Sample for \(requirement.name)")
         }
     }
@@ -223,4 +377,19 @@ struct EditorView: View {
 private struct KeywordKey: Hashable {
     let keyword: String
     let enabled: Bool
+}
+
+private extension View {
+    /// A single-line field on a quiet rounded fill, like the keyword and tags values in the mock.
+    func fieldBackground() -> some View {
+        padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    /// The rounded, hairline-bordered frame shared by the template and result panes.
+    func paneChrome() -> some View {
+        clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator))
+    }
 }

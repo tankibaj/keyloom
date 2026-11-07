@@ -13,6 +13,8 @@ final class RichTextController: NSObject, NSTextViewDelegate {
     @ObservationIgnored private weak var textView: NSTextView?
     @ObservationIgnored private var isApplying = false
     @ObservationIgnored private var editMayCompleteToken = false
+    /// TextKit 2 keeps its layout manager's delegate weakly.
+    @ObservationIgnored private let pillProvider = TokenPillFragmentProvider()
 
     @ObservationIgnored private var pendingDocument: Document?
 
@@ -99,6 +101,7 @@ final class RichTextController: NSObject, NSTextViewDelegate {
         self.textView = textView
         textView.writingToolsBehavior = Self.nsBehavior(writingToolsBehavior)
         textView.delegate = self
+        textView.textLayoutManager?.delegate = pillProvider
         if let pendingDocument { load(pendingDocument) }
     }
 
@@ -128,13 +131,15 @@ final class RichTextController: NSObject, NSTextViewDelegate {
             refreshState()
             return
         }
-        var runs: [(NSRange, TextStyle)] = []
-        storage.enumerateAttributes(in: selection) { attributes, range, _ in runs.append((range, RichTextConverter.style(of: attributes))) }
+        var runs: [(NSRange, TextStyle, Bool)] = []
+        storage.enumerateAttributes(in: selection) { attributes, range, _ in
+            runs.append((range, RichTextConverter.style(of: attributes), attributes[RichTextConverter.tokenKey] != nil))
+        }
         let removing = runs.allSatisfy { $0.1.contains(style) }
         edit(selection) { storage in
-            for (range, current) in runs {
+            for (range, current, isToken) in runs {
                 var attributes: [NSAttributedString.Key: Any] = [:]
-                Self.apply(removing ? current.subtracting(style) : current.union(style), to: &attributes)
+                Self.apply(removing ? current.subtracting(style) : current.union(style), isToken: isToken, to: &attributes)
                 storage.addAttribute(.font, value: attributes[.font]!, range: range)
                 if let underline = attributes[.underlineStyle] {
                     storage.addAttribute(.underlineStyle, value: underline, range: range)
@@ -171,8 +176,8 @@ final class RichTextController: NSObject, NSTextViewDelegate {
         sanitizeTypingAttributes()
     }
 
-    private static func apply(_ style: TextStyle, to attributes: inout [NSAttributedString.Key: Any]) {
-        let fresh = RichTextConverter.attributes(style: style, kind: .plain)
+    private static func apply(_ style: TextStyle, isToken: Bool = false, to attributes: inout [NSAttributedString.Key: Any]) {
+        let fresh = RichTextConverter.attributes(style: style, kind: .plain, isToken: isToken)
         attributes[.font] = fresh[.font]
         attributes[.underlineStyle] = fresh[.underlineStyle]
     }

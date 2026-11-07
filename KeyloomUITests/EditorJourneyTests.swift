@@ -61,11 +61,11 @@ final class EditorJourneyTests: KeyloomUITestCase {
             shot("duplicate-keyword-conflict")
 
             // Turning expansion off lets the snippet be saved.
-            library.checkBoxes["Expand automatically"].click()
+            library.switches["Expand automatically"].click()
             expect(disappears(conflict), "the conflict clears when Expand automatically is off")
             expect(wait(saveButton, until: "isEnabled == true"), "Save is enabled with expansion off")
             shot("conflict-resolved-expansion-off")
-            library.checkBoxes["Expand automatically"].click()
+            library.switches["Expand automatically"].click()
             try need(conflict, "conflict returns when expansion is back on")
 
             // Overlap: another snippet's keyword completes first.

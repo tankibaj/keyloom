@@ -108,3 +108,69 @@ final class RichTextConverterTests: XCTestCase {
         XCTAssertEqual(RichTextConverter.tokenEdit(range: NSRange(location: 0, length: 2), replacement: "", in: text), .allow)
     }
 }
+
+@MainActor
+final class TokenPillTests: XCTestCase {
+    private func document(_ source: String) throws -> Document { try TokenParser.parse(source).document }
+
+    func testTokensAreMonospacedPillTextWithoutASquareBackground() throws {
+        let text = RichTextConverter.attributedString(from: try document("Hi {date} there"))
+        var tokenRanges: [NSRange] = []
+        text.enumerateAttribute(RichTextConverter.tokenKey, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+            if value != nil { tokenRanges.append(range) }
+        }
+        XCTAssertEqual(tokenRanges, [NSRange(location: 3, length: 6)])
+        let attributes = text.attributes(at: 3, effectiveRange: nil)
+        XCTAssertTrue((attributes[.font] as? NSFont)?.fontDescriptor.symbolicTraits.contains(.monoSpace) == true)
+        let resolved = { (color: NSColor?) -> [CGFloat] in
+            var parts: [CGFloat] = []
+            NSAppearance(named: .aqua)!.performAsCurrentDrawingAppearance {
+                let c = color?.usingColorSpace(.sRGB)
+                parts = [c?.redComponent ?? -1, c?.greenComponent ?? -1, c?.blueComponent ?? -1]
+            }
+            return parts
+        }
+        XCTAssertEqual(resolved(attributes[.foregroundColor] as? NSColor), resolved(TokenPill.text))
+        XCTAssertNil(attributes[.backgroundColor], "the rounded pill is drawn by the layout fragment, not a square background")
+        XCTAssertNil(text.attributes(at: 0, effectiveRange: nil)[RichTextConverter.tokenKey])
+    }
+
+    func testABoldTokenKeepsItsStyleThroughTheModel() throws {
+        let source = Document(paragraphs: [Paragraph(kind: .plain, runs: [
+            Run(style: .bold, spans: [.token(Token(kind: .date(format: nil), raw: "{date}"))])])])
+        let text = RichTextConverter.attributedString(from: source)
+        XCTAssertEqual(RichTextConverter.document(from: text), source)
+    }
+
+    func testPillsAreDrawnBehindTokensInLightAndDark() throws {
+        for (appearance, name) in [(NSAppearance.Name.aqua, "light"), (.darkAqua, "dark")] {
+            let controller = RichTextController()
+            let scroll = RichTextView.makeScrollView(controller: controller)
+            controller.load(try document("{date}{clipboard}"))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 80), styleMask: [.titled], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: appearance)
+            window.contentView = scroll
+            scroll.frame = NSRect(x: 0, y: 0, width: 300, height: 80)
+            scroll.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+            let rep = try XCTUnwrap(scroll.bitmapImageRepForCachingDisplay(in: scroll.bounds))
+            scroll.cacheDisplay(in: scroll.bounds, to: rep)
+            var expected = NSColor.clear
+            window.effectiveAppearance.performAsCurrentDrawingAppearance { expected = TokenPill.fill.usingColorSpace(.sRGB) ?? .clear }
+            let background = try XCTUnwrap(rep.colorAt(x: 290, y: 70)?.usingColorSpace(.sRGB))
+            // The pill is translucent in dark mode, so expect it blended over the text background.
+            let a = expected.alphaComponent
+            let want = [expected.redComponent * a + background.redComponent * (1 - a),
+                        expected.greenComponent * a + background.greenComponent * (1 - a),
+                        expected.blueComponent * a + background.blueComponent * (1 - a)]
+            var found = false
+            for x in 0..<rep.pixelsWide where !found {
+                for y in 0..<rep.pixelsHigh where !found {
+                    guard let p = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                    found = abs(p.redComponent - want[0]) < 0.05 && abs(p.greenComponent - want[1]) < 0.05 && abs(p.blueComponent - want[2]) < 0.05
+                }
+            }
+            XCTAssertTrue(found, "a pill-colored area is drawn behind the placeholder in \(name) mode")
+        }
+    }
+}

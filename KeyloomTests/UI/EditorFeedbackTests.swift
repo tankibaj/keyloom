@@ -117,3 +117,64 @@ final class EditorFeedbackTests: LibraryUITestCase {
         XCTAssertEqual(rendered.plainText, "Plain")
     }
 }
+
+@MainActor
+final class EditorPresentationTests: LibraryUITestCase {
+    private func makeEditor(_ library: SnippetLibrary, snippet: Snippet? = nil) -> EditorViewModel {
+        EditorViewModel(library: library, snippet: snippet, environment: { [clock] in
+            RenderEnvironment(date: clock.now, timeZone: TimeZone(identifier: "UTC")!, locale: Locale(identifier: "en_US_POSIX"),
+                              makeUUID: { UUID() }, clipboardText: { "(clipboard)" })
+        })
+    }
+
+    func testKeywordStatusFollowsTheConflictCheck() async throws {
+        let library = try await openLibrary()
+        try await seed(library, "Greeting", keyword: ";hi")
+        let editor = makeEditor(library)
+        XCTAssertEqual(editor.keywordStatus, .none)
+        editor.draft.keyword = ";hi"
+        await editor.refreshKeywordFeedback()
+        XCTAssertEqual(editor.keywordStatus, .conflict("“Greeting” already expands from ;hi."))
+        XCTAssertEqual(editor.keywordStatus.title, "Keyword in use")
+        editor.draft.enabled = false
+        await editor.refreshKeywordFeedback()
+        XCTAssertEqual(editor.keywordStatus, .off)
+        editor.draft.enabled = true
+        editor.draft.keyword = ";free"
+        await editor.refreshKeywordFeedback()
+        XCTAssertEqual(editor.keywordStatus, .free)
+        XCTAssertEqual(editor.keywordStatus.title, "No conflicts")
+        editor.draft.keyword = ";hix"
+        await editor.refreshKeywordFeedback()
+        guard case .overlap = editor.keywordStatus else { return XCTFail("a keyword that starts with another is an overlap, not a conflict") }
+        XCTAssertTrue(editor.canSave == false || editor.isDirty, "an overlap never blocks")
+    }
+
+    func testPreviewResolvesPlaceholdersWithSampleArgumentsAndNoRealClipboard() async throws {
+        let library = try await openLibrary()
+        let snippet = try await seed(library, "Sig", keyword: nil, body: "Hi {argument name=\"who\" default=\"Ada\"} {clipboard}")
+        let editor = makeEditor(library, snippet: snippet)
+        guard case .rendered(let first) = editor.preview else { return XCTFail("renders") }
+        XCTAssertEqual(first.segments.map(\.text).joined(), "Hi Ada (clipboard)")
+        editor.sampleArguments["who"] = "Grace"
+        guard case .rendered(let second) = editor.preview else { return XCTFail("renders") }
+        XCTAssertEqual(second.segments.map(\.text).joined(), "Hi Grace (clipboard)")
+    }
+
+    func testUsageLineIsDeviceLocalCountsOnly() async throws {
+        XCTAssertEqual(EditorViewModel.usageLine(nil), "Not used yet on this Mac.")
+        XCTAssertEqual(EditorViewModel.usageLine(SnippetUsage(lastUsedAt: nil, useCount: 0)), "Not used yet on this Mac.")
+        XCTAssertEqual(EditorViewModel.usageLine(SnippetUsage(lastUsedAt: Date(), useCount: 1)).prefix(9), "Used once")
+        XCTAssertTrue(EditorViewModel.usageLine(SnippetUsage(lastUsedAt: Date(), useCount: 12)).hasPrefix("Used 12 times on this Mac · last used"))
+
+        let library = try await openLibrary()
+        let snippet = try await seed(library, "Sig", keyword: ";s")
+        try await library.recordUsage(id: snippet.id)
+        try await library.recordUsage(id: snippet.id)
+        let editor = makeEditor(library, snippet: snippet)
+        await editor.refreshUsage()
+        XCTAssertEqual(editor.usage?.useCount, 2)
+        XCTAssertTrue(editor.usageLine.hasPrefix("Used 2 times"))
+        XCTAssertNil(makeEditor(library).usage)
+    }
+}
