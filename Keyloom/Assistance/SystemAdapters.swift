@@ -57,8 +57,10 @@ private final class SystemModelSession: AssistanceModelSession, @unchecked Senda
         }
     }
 
-    /// Only the macOS 27 error type is mapped; on macOS 26 every failure is `.other`.
+    /// Only the macOS 27 error type is mapped, and only when built with the macOS 27 SDK (Swift 6.4+, Xcode 27);
+    /// with the macOS 26 SDK, or on macOS 26, every failure is `.other`.
     private static func failure(of error: any Error) -> ModelFailure {
+        #if compiler(>=6.4)
         guard #available(macOS 27.0, *), let error = error as? LanguageModelError else { return .other }
         switch error {
         case .contextSizeExceeded: return .contextTooLarge
@@ -66,6 +68,9 @@ private final class SystemModelSession: AssistanceModelSession, @unchecked Senda
         case .guardrailViolation, .refusal: return .refused
         default: return .other
         }
+        #else
+        return .other
+        #endif
     }
 }
 #endif
