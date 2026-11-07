@@ -29,9 +29,23 @@ final class StoreTests: StoreTestCase {
         XCTAssertEqual(fetched, input)
         XCTAssertEqual(fetched?.tags, ["b", "a"], "tag order survives")
 
-        let raw = try RawDatabase(url, readOnly: true)
+        let raw = try RawDatabase(url)
         XCTAssertEqual(try raw.userVersion, Migrations.all.count)
         XCTAssertEqual(try raw.text("PRAGMA journal_mode"), "wal")
+    }
+
+    func testDatabaseWithUnmergedWalOpensAfterACrash() async throws {
+        let url = try databaseURL()
+        let store = try openStore(at: url)
+        let input = try await store.create(makeSnippet())
+        // Simulate a crash: the committed row only exists in the WAL, and the wal-index is gone.
+        let crashed = try databaseURL()
+        try FileManager.default.copyItem(at: url, to: crashed)
+        try FileManager.default.copyItem(atPath: url.path + "-wal", toPath: crashed.path + "-wal")
+        let recovered = try openStore(at: crashed)
+        let fetched = try await recovered.snippet(id: input.id)
+        XCTAssertEqual(fetched, input)
+        await store.close()
     }
 
     func testDatabaseFileIsOwnerOnly() async throws {
@@ -209,7 +223,7 @@ final class StoreTests: StoreTestCase {
         for case .failure(let error) in outcomes {
             guard case .keywordConflict = error else { return XCTFail("unexpected failure \(error)") }
         }
-        let raw = try RawDatabase(url, readOnly: true)
+        let raw = try RawDatabase(url)
         XCTAssertEqual(try raw.count("snippets"), 1)
         XCTAssertEqual(try raw.count("snippet_revisions"), 1)
     }
@@ -277,7 +291,7 @@ final class StoreTests: StoreTestCase {
         let snippet = try await store.create(makeSnippet(tags: ["a"]))
         try await store.delete(id: snippet.id)
         try await store.purge(id: snippet.id)
-        let raw = try RawDatabase(url, readOnly: true)
+        let raw = try RawDatabase(url)
         XCTAssertEqual(try raw.count("snippets"), 0)
         XCTAssertEqual(try raw.count("snippet_tags"), 0)
         XCTAssertEqual(try raw.count("snippet_revisions"), 0)

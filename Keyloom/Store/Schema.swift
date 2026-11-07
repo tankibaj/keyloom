@@ -63,5 +63,21 @@ enum Migrations {
         snapshot BLOB NOT NULL,
         PRIMARY KEY (snippet_id, revision)
     ) STRICT, WITHOUT ROWID;
+
+    -- Durable sync intent, appended in the same transaction as the mutation it describes. `account` keeps
+    -- one iCloud account's queue from ever being replayed for another; `retry_id` is the stable identity
+    -- a sync engine reuses across retries. No foreign key: a delete intent must outlive a purged row.
+    CREATE TABLE sync_outbox (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        account TEXT NOT NULL CHECK (length(account) > 0),
+        record_id TEXT NOT NULL,
+        op TEXT NOT NULL CHECK (op IN ('upsert', 'delete')),
+        revision INTEGER NOT NULL,
+        retry_id TEXT NOT NULL UNIQUE,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        created_at REAL NOT NULL,
+        last_attempt_at REAL
+    ) STRICT;
+    CREATE INDEX sync_outbox_account_seq ON sync_outbox (account, seq);
     """
 }

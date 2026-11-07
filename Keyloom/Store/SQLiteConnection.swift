@@ -41,8 +41,11 @@ final class SQLiteConnection {
     private var handle: OpaquePointer?
     private var statements: [String: OpaquePointer] = [:]
 
-    init(path: String, readOnly: Bool = false) throws {
-        let flags = (readOnly ? SQLITE_OPEN_READONLY : (SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE)) | SQLITE_OPEN_FULLMUTEX
+    /// `createIfMissing: false` for files that must already exist (probing, restore sources). Connections are
+    /// always read-write: a read-only handle cannot run WAL recovery after a crash, so it could not open a
+    /// database that a read-write one opens fine.
+    init(path: String, createIfMissing: Bool = true) throws {
+        let flags = (createIfMissing ? SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE : SQLITE_OPEN_READWRITE) | SQLITE_OPEN_FULLMUTEX
         guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK else {
             let code = handle.map(sqlite3_extended_errcode) ?? SQLITE_CANTOPEN
             sqlite3_close(handle)
@@ -50,12 +53,17 @@ final class SQLiteConnection {
         }
         sqlite3_extended_result_codes(handle, 1)
         sqlite3_busy_timeout(handle, Self.busyTimeoutMilliseconds)
-        if !readOnly { try execute("PRAGMA foreign_keys = ON") }
+        try execute("PRAGMA foreign_keys = ON")
     }
 
-    deinit {
+    deinit { close() }
+
+    /// Finalizes every cached statement and closes the handle. Idempotent; the connection is unusable after.
+    func close() {
         for statement in statements.values { sqlite3_finalize(statement) }
+        statements.removeAll()
         sqlite3_close(handle)
+        handle = nil
     }
 
     // MARK: Statements

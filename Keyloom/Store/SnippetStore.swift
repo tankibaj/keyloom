@@ -15,6 +15,9 @@ import SQLite3
 ///   caller's `lastUsedAt`.
 /// - Revision history keeps the newest `maxRevisionsPerSnippet` snapshots per snippet.
 ///
+/// - Every local mutation appends a sync-intent row to `sync_outbox` in the same transaction (see
+///   `SnippetStore+Outbox.swift`); usage and purge append none.
+///
 /// Opening blocks on file I/O: create the store off the keyboard callback.
 actor SnippetStore {
     static let tombstoneRetention: TimeInterval = 30 * 24 * 60 * 60
@@ -28,18 +31,33 @@ actor SnippetStore {
     private static let uniqueConstraint = SQLITE_CONSTRAINT | (8 << 8)
 
     private var database: SQLiteConnection?
-    private let now: @Sendable () -> Date
-    private let makeID: @Sendable () -> UUID
+    let now: @Sendable () -> Date
+    let makeID: @Sendable () -> UUID
+    /// The account whose outbox local mutations are journaled under.
+    var syncAccount: String
 
-    /// `now` and `makeID` are injected so tests control time and identifiers.
-    init(url: URL, migrations: [Migration] = Migrations.all, now: @escaping @Sendable () -> Date = { Date() },
-         makeID: @escaping @Sendable () -> UUID = { UUID() }) throws {
+    /// Opens (creating, migrating and backing up as needed) the library at `url`. A database that holds
+    /// data and needs migrating is first copied into `backupDirectory`. `now` and `makeID` are injected so
+    /// tests control time and identifiers; `makeID` also names duplicates and outbox retry identities.
+    init(url: URL, backupDirectory: URL, syncAccount: String = "local", migrations: [Migration] = Migrations.all,
+         now: @escaping @Sendable () -> Date = { Date() }, makeID: @escaping @Sendable () -> UUID = { UUID() }) throws {
+        try Self.validateAccount(syncAccount)
         self.now = now
         self.makeID = makeID
-        database = try Self.openDatabase(at: url, migrations: migrations)
+        self.syncAccount = syncAccount
+        database = try DatabaseMigrator.open(at: url, migrations: migrations, backupDirectory: backupDirectory, now: now())
     }
 
-    func close() { database = nil }
+    func close() {
+        database?.close()
+        database = nil
+    }
+
+    /// Writes a verified, self-contained snapshot of the whole library into `directory` and returns its URL.
+    /// Retention (30 daily snapshots) is the caller's policy.
+    func backup(to directory: URL, label: String = "snapshot") throws -> URL {
+        try DatabaseBackup.write(try connection(), to: directory, label: label, now: now())
+    }
 
     // MARK: Create, read, update
 
@@ -65,6 +83,7 @@ actor SnippetStore {
             }
             try replaceTags(db, of: stored)
             try recordRevision(db, stored)
+            try journal(db, id: stored.id, operation: .upsert, revision: stored.revision)
             return stored
         }
     }
@@ -90,9 +109,7 @@ actor SnippetStore {
         try Self.validate(snippet)
         let template = try snippet.template.encoded()
         return try write { db in
-            guard let current = try load(db, where: "id = ? AND deleted_at IS NULL", [.uuid(snippet.id)]).first?.snippet else {
-                throw StoreError.notFound(id: snippet.id)
-            }
+            let current = try liveSnippet(db, snippet.id)
             var stored = snippet
             stored.revision = current.revision + 1
             stored.createdAt = current.createdAt
@@ -110,6 +127,7 @@ actor SnippetStore {
             }
             try replaceTags(db, of: stored)
             try recordRevision(db, stored)
+            try journal(db, id: stored.id, operation: .upsert, revision: stored.revision)
             return stored
         }
     }
@@ -127,10 +145,10 @@ actor SnippetStore {
 
     func setPinned(_ pinned: Bool, id: UUID) throws -> Snippet {
         try write { db in
-            try requireLive(db, id)
+            _ = try liveSnippet(db, id)
             try db.run("UPDATE snippets SET pinned = ?, revision = revision + 1, updated_at = ? WHERE id = ?",
                        [.bool(pinned), .date(now()), .uuid(id)])
-            return try reloadAndRecord(db, id)
+            return try reloadRecordAndJournal(db, id)
         }
     }
 
@@ -138,10 +156,11 @@ actor SnippetStore {
 
     func delete(id: UUID) throws {
         try write { db in
-            try requireLive(db, id)
+            let current = try liveSnippet(db, id)
             let moment = SQLValue.date(now())
             try db.run("UPDATE snippets SET deleted_at = ?, updated_at = ?, revision = revision + 1 WHERE id = ?",
                        [moment, moment, .uuid(id)])
+            try journal(db, id: id, operation: .delete, revision: current.revision + 1)
         }
     }
 
@@ -169,7 +188,7 @@ actor SnippetStore {
                 try db.run("UPDATE snippets SET deleted_at = NULL, enabled = 0, updated_at = ?, revision = revision + 1 WHERE id = ?",
                            [moment, .uuid(id)])
             }
-            return try reloadAndRecord(db, id)
+            return try reloadRecordAndJournal(db, id)
         }
     }
 
@@ -258,14 +277,14 @@ actor SnippetStore {
         let deletedAt: Date?
     }
 
-    private func connection() throws -> SQLiteConnection {
+    func connection() throws -> SQLiteConnection {
         guard let database else { throw StoreError.closed }
         return database
     }
 
-    private func read<T>(_ body: (SQLiteConnection) throws -> T) throws -> T { try body(try connection()) }
+    func read<T>(_ body: (SQLiteConnection) throws -> T) throws -> T { try body(try connection()) }
 
-    private func write<T>(_ body: (SQLiteConnection) throws -> T) throws -> T {
+    func write<T>(_ body: (SQLiteConnection) throws -> T) throws -> T {
         let db = try connection()
         return try db.transaction { try body(db) }
     }
@@ -291,10 +310,11 @@ actor SnippetStore {
         try snippet.template.validate()
     }
 
-    private func requireLive(_ db: SQLiteConnection, _ id: UUID) throws {
-        guard try db.first("SELECT 1 FROM snippets WHERE id = ? AND deleted_at IS NULL", [.uuid(id)], map: { $0.int(0) }) != nil else {
+    private func liveSnippet(_ db: SQLiteConnection, _ id: UUID) throws -> Snippet {
+        guard let snippet = try load(db, where: "id = ? AND deleted_at IS NULL", [.uuid(id)]).first?.snippet else {
             throw StoreError.notFound(id: id)
         }
+        return snippet
     }
 
     /// Rows plus their tags (one query for all tags). Filters bind as parameters; only fixed SQL fragments
@@ -336,9 +356,10 @@ actor SnippetStore {
                    [.uuid(snippet.id), .int(Int64(snippet.revision - Self.maxRevisionsPerSnippet))])
     }
 
-    private func reloadAndRecord(_ db: SQLiteConnection, _ id: UUID) throws -> Snippet {
+    private func reloadRecordAndJournal(_ db: SQLiteConnection, _ id: UUID) throws -> Snippet {
         guard let snippet = try load(db, where: "id = ?", [.uuid(id)]).first?.snippet else { throw StoreError.notFound(id: id) }
         try recordRevision(db, snippet)
+        try journal(db, id: id, operation: .upsert, revision: snippet.revision)
         return snippet
     }
 
@@ -355,26 +376,5 @@ actor SnippetStore {
             }
             throw StoreError.keywordConflict(existingID: owner)
         }
-    }
-
-    // MARK: Opening
-
-    private static func openDatabase(at url: URL, migrations: [Migration]) throws -> SQLiteConnection {
-        // Create the file owner-only before SQLite does, so there is no window with default permissions.
-        if !FileManager.default.fileExists(atPath: url.path) {
-            FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600])
-        }
-        let db = try SQLiteConnection(path: url.path)
-        guard try db.first("PRAGMA journal_mode = WAL", map: { $0.string(0) }) == "wal" else {
-            throw StoreError.sqlite(code: SQLITE_ERROR, context: "journal_mode")
-        }
-        let current = try db.userVersion
-        for migration in migrations where migration.version > current {
-            try db.transaction {
-                try migration.apply(db)
-                try db.setUserVersion(migration.version)
-            }
-        }
-        return db
     }
 }

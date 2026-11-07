@@ -34,8 +34,8 @@ final class RawDatabase {
 
     struct RawError: Error { let message: String }
 
-    init(_ url: URL, readOnly: Bool = false) throws {
-        let flags = readOnly ? SQLITE_OPEN_READONLY : (SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE)
+    init(_ url: URL) throws {
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
         guard sqlite3_open_v2(url.path, &handle, flags, nil) == SQLITE_OK else {
             throw RawError(message: "open failed")
         }
@@ -87,8 +87,13 @@ class StoreTestCase: XCTestCase {
         return url
     }
 
-    func openStore(at url: URL) throws -> SnippetStore {
-        try SnippetStore(url: url, now: { [clock] in clock.now }, makeID: { [ids] in ids.next() })
+    /// Backups go to `backups/` next to the database unless a test says otherwise.
+    func openStore(at url: URL, migrations: [Migration] = Migrations.all, syncAccount: String = "local",
+                   backupDirectory: URL? = nil) throws -> SnippetStore {
+        try SnippetStore(url: url,
+                         backupDirectory: backupDirectory ?? url.deletingLastPathComponent().appendingPathComponent("backups"),
+                         syncAccount: syncAccount, migrations: migrations,
+                         now: { [clock] in clock.now }, makeID: { [ids] in ids.next() })
     }
 
     func makeSnippet(id: UUID = UUID(), name: String = "Greeting", keyword: String? = ";hi", enabled: Bool = true,
