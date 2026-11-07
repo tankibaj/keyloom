@@ -96,23 +96,30 @@ enum RichTextConverter {
         text.enumerateAttributes(in: contentRange) { attributes, segment, _ in
             let style = style(of: attributes)
             let raw = (text.string as NSString).substring(with: segment)
-            let span: TemplateSpan = attributes[tokenKey] != nil ? token(fromSource: raw).map { .token($0) } ?? .literal(raw) : .literal(raw)
-            if let last = runs.last, last.style == style {
-                if case .literal(let more) = span, case .literal(let before)? = runs[runs.count - 1].spans.last {
-                    runs[runs.count - 1].spans[runs[runs.count - 1].spans.count - 1] = .literal(before + more)
+            // Neighboring chips share their attributes, so one attribute run can hold several tokens.
+            let spans: [TemplateSpan] = attributes[tokenKey] != nil ? tokens(fromSource: raw) ?? [.literal(raw)] : [.literal(raw)]
+            for span in spans {
+                if let last = runs.last, last.style == style {
+                    if case .literal(let more) = span, case .literal(let before)? = last.spans.last {
+                        runs[runs.count - 1].spans[last.spans.count - 1] = .literal(before + more)
+                    } else {
+                        runs[runs.count - 1].spans.append(span)
+                    }
                 } else {
-                    runs[runs.count - 1].spans.append(span)
+                    runs.append(Run(style: style, spans: [span]))
                 }
-            } else {
-                runs.append(Run(style: style, spans: [span]))
             }
         }
         return Paragraph(kind: kind, runs: runs.isEmpty ? [Run(style: [], spans: [])] : runs)
     }
 
-    private static func token(fromSource source: String) -> Token? {
-        guard let parsed = try? TokenParser.parse(source), parsed.spans.count == 1, case .token(let token) = parsed.spans[0].span else { return nil }
-        return token
+    /// The tokens a chip run spells out, or nil when anything in it is not a valid token (it then stays literal).
+    private static func tokens(fromSource source: String) -> [TemplateSpan]? {
+        guard let parsed = try? TokenParser.parse(source), !parsed.spans.isEmpty else { return nil }
+        let tokens = parsed.spans.compactMap { parsedSpan -> TemplateSpan? in
+            if case .token(let token) = parsedSpan.span { .token(token) } else { nil }
+        }
+        return tokens.count == parsed.spans.count ? tokens : nil
     }
 
     // MARK: Paragraph helpers

@@ -147,4 +147,31 @@ final class EditorViewModelTests: LibraryUITestCase {
         editor.draft.keyword = ";sig"
         XCTAssertTrue(editor.canSave, "any keyword is accepted")
     }
+
+    func testBackToBackPlaceholdersRenderInThePreviewOfferTheArgumentAndSurviveSaveAndReselect() async throws {
+        let library = try await openLibrary()
+        let editor = makeEditor(library)
+        _ = RichTextView.makeScrollView(controller: editor.bodyController)
+        editor.bodyController.insert(tokenSource: try Placeholder.date(format: nil).source())
+        editor.bodyController.insert(tokenSource: try Placeholder.argument(name: "recipient", defaultValue: "team", choices: []).source())
+        func assertRendered(_ editor: EditorViewModel, _ context: String, file: StaticString = #filePath, line: UInt = #line) {
+            XCTAssertEqual(editor.argumentRequirements.map(\.name), ["recipient"], "Try Expansion offers the argument \(context)", file: file, line: line)
+            guard case .rendered(let rendered) = editor.preview else { return XCTFail("expected a preview \(context)", file: file, line: line) }
+            XCTAssertFalse(rendered.plainText.contains("{"), "tokens are substituted \(context), got \(rendered.plainText)", file: file, line: line)
+            XCTAssertTrue(rendered.plainText.hasSuffix("team"), "the argument shows its default \(context), got \(rendered.plainText)", file: file, line: line)
+        }
+        assertRendered(editor, "before saving")
+        editor.sampleArguments["recipient"] = "Ana"
+        guard case .rendered(let typed) = editor.preview else { return XCTFail("expected a preview") }
+        XCTAssertTrue(typed.plainText.hasSuffix("Ana"), "a typed sample replaces the default")
+        editor.sampleArguments = [:]
+
+        editor.draft.name = "Greeting"
+        let saved = await editor.save()
+        XCTAssertTrue(saved)
+        assertRendered(editor, "after saving")
+        let all = await library.allSnippets()
+        let stored = try XCTUnwrap(all.first)
+        assertRendered(makeEditor(library, snippet: stored), "after reselecting")
+    }
 }

@@ -168,13 +168,19 @@ struct EditorView: View {
         let sample = Binding(
             get: { editor.sampleArguments[requirement.name] ?? requirement.defaultValue ?? requirement.choices.first ?? "" },
             set: { editor.sampleArguments[requirement.name] = $0 })
+        // A visible label (a bare prompt disappears once the field has text) and the same name for VoiceOver.
         if requirement.choices.isEmpty {
-            TextField("Sample for \(requirement.name)", text: sample, prompt: Text("‹\(requirement.name)›"))
-                .textFieldStyle(.roundedBorder)
+            LabeledContent("Sample for \(requirement.name)") {
+                TextField("Sample for \(requirement.name)", text: sample, prompt: Text("‹\(requirement.name)›"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Sample for \(requirement.name)")
+            }
         } else {
             Picker("Sample for \(requirement.name)", selection: sample) {
                 ForEach(requirement.choices, id: \.self) { Text($0).tag($0) }
             }
+            .accessibilityLabel("Sample for \(requirement.name)")
         }
     }
 

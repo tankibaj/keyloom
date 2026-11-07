@@ -87,6 +87,17 @@ final class RichTextConverterTests: XCTestCase {
         XCTAssertEqual(document.paragraphs[1].runs, [run([], .literal("{date format=}"))], "malformed source stays literal text")
     }
 
+    func testAdjacentTokensOfOneStyleStayTokensNotLiteralText() throws {
+        // Insert Placeholder twice in a row makes two chips with identical attributes; AppKit reports them as one run.
+        let date = Token(kind: .date(format: nil), raw: "{date}")
+        let argument = try XCTUnwrap(try TokenParser.parse("{argument name=\"recipient\" default=\"team\"}").spans.compactMap { span -> Token? in
+            if case .token(let token) = span.span { token } else { nil }
+        }.first)
+        let document = Document(paragraphs: [para(.plain, run([], .literal("Hi "), .token(date), .token(argument)))])
+        _ = roundTrip(document)
+        XCTAssertEqual(TemplateRenderer.requiredArguments(in: RichTextConverter.document(from: RichTextConverter.attributedString(from: document))).map(\.name), ["recipient"])
+    }
+
     func testTokenEditPolicyIsAtomic() {
         let text = RichTextConverter.attributedString(from: Document(paragraphs: [para(.plain, run([], .literal("ab"), .token(Token(kind: .uuid, raw: "{uuid}")), .literal("cd")))]))
         XCTAssertEqual(RichTextConverter.tokenEdit(range: NSRange(location: 4, length: 0), replacement: "x", in: text), .reject)
