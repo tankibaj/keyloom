@@ -9,16 +9,14 @@ cask "keyloom" do
   desc "Menu-bar text expander with snippets and tokens"
   homepage "https://github.com/tankibaj/keyloom"
 
-  # UNVERIFIED symbol: `:tahoe` is macOS 26 in current Homebrew; confirm with `brew style`/`brew audit`.
   depends_on arch: :arm64
-  depends_on macos: ">= :tahoe"
+  depends_on macos: :tahoe
 
   app "Keyloom.app"
 
   # The build is ad-hoc signed and not notarized: drop quarantine so Gatekeeper does not block launch.
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/Keyloom.app"]
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/Keyloom.app"]
   end
 
   zap trash: [
