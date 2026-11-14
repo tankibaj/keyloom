@@ -1,0 +1,60 @@
+import SwiftUI
+
+@main
+struct KeyloomApp: App {
+    @State private var environment: AppEnvironment
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    init() {
+        let environment = AppEnvironment()
+        _environment = State(initialValue: environment)
+        // The host and the menu bar belong to the resident app, not to the library window being open.
+        Task { await environment.start() }
+    }
+
+    var body: some Scene {
+        Window(AppIdentity.name, id: "library") {
+            LibraryWindow(environment: environment)
+                .onAppear {
+                    appDelegate.model = environment.model
+                    appDelegate.shutdown = { [environment] in await environment.shutdown() }
+                    environment.model.quitAction = { AppDelegate.requestTermination() }
+                }
+        }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1180, height: 760)
+        .commands { LibraryCommands(model: environment.model) }
+        MenuBarExtra(isInserted: Bindable(environment.startup).showInMenuBar) {
+            if let menuBar = environment.services?.menuBar {
+                MenuBarView(model: menuBar, app: environment.model)
+            } else {
+                ProgressView("Starting…").padding()
+            }
+        } label: {
+            let needsAccessibility = environment.services.map { !$0.host.status.permissions.accessibility } ?? false
+            Image(needsAccessibility ? "MenuBarGlyphBadge" : "MenuBarGlyph")
+                .opacity(environment.services?.menuBar.isPaused == true ? 0.5 : 1)
+                .accessibilityLabel(AppIdentity.name)
+                .modifier(OpenLibraryAtLaunch())
+        }
+        .menuBarExtraStyle(.window)
+        Settings {
+            SettingsView(settings: environment.services?.settings, snapshotError: environment.model.snapshotError)
+        }
+        .windowResizability(.contentMinSize)
+    }
+}
+
+/// The menu-bar label exists from launch, so it can open the library window once, as a plain app would.
+private struct OpenLibraryAtLaunch: ViewModifier {
+    @Environment(\.openWindow) private var openWindow
+    @State private var opened = false
+
+    func body(content: Content) -> some View {
+        content.task {
+            guard !opened else { return }
+            opened = true
+            openWindow(id: "library")
+        }
+    }
+}

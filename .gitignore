@@ -1,0 +1,29 @@
+.DS_Store
+# Xcode
+DerivedData/
+/.derived/
+*.xcresult
+xcuserdata/
+*.xcuserstate
+# Evidence artifacts
+screenshots/
+traces/
+test-results/
+# Release artifacts (scripts/release)
+/dist/
+/Resources/
+
+# Agent working docs (plans, retros, spikes, work packages, handovers)
+docs/plan/
+docs/retros/
+docs/spike/
+docs/wp/
+docs/handover/
+
+# Local-only and generated
+docs/design/
+.delegate/
+*.log
+.derived/
+.claude/settings.local.json
+.env*

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TEMPLATE ONLY. Not referenced by any target; this build is NOT provisioned for CloudKit.
+  For a live CloudKit probe run, copy this file outside the repo, replace the placeholder
+  with a test container you own, sign KeyloomProbe with a provisioning profile that grants
+  it (set CODE_SIGN_ENTITLEMENTS and signing settings on the command line, not in the repo),
+  and enter the same identifier in the probe window.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array>
+        <string>iCloud.REPLACE.WITH.TEST.CONTAINER</string>
+    </array>
+    <key>com.apple.developer.icloud-services</key>
+    <array>
+        <string>CloudKit</string>
+    </array>
+</dict>
+</plist>

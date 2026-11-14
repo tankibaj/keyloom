@@ -1,0 +1,129 @@
+name: Release
+
+# Builds and releases when MARKETING_VERSION changes on main (or on demand). The tag is created by the release
+# itself, after the build, signing and packaging succeeded, so a failed build never leaves a tag behind.
+# Version policy: bump MARKETING_VERSION in the pbxproj and push to main.
+on:
+  push:
+    branches: [main]
+    paths: ["Keyloom.xcodeproj/project.pbxproj"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional: must equal MARKETING_VERSION (default). Re-runs a release that has no tag yet."
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      needed: ${{ steps.v.outputs.needed }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          versions="$(grep -E 'MARKETING_VERSION = ' Keyloom.xcodeproj/project.pbxproj | sed -E 's/.*= ([^;]+);/\1/' | sort -u)"
+          if [[ -z "$versions" || "$(wc -l <<<"$versions")" -ne 1 ]]; then
+            echo "MARKETING_VERSION is not a single value: $versions"; exit 1
+          fi
+          v="$versions"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || { echo "bad version: $v"; exit 1; }
+          if [[ -n "${INPUT_VERSION#v}" && "${INPUT_VERSION#v}" != "$v" ]]; then
+            echo "input $INPUT_VERSION differs from MARKETING_VERSION $v"; exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null 2>&1; then
+            echo "v$v already released; nothing to do"; echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: check
+    if: needs.check.outputs.needed == 'true'
+    # UNVERIFIED: confirm the `macos-26` runner label and an Xcode 26+ install (see ci.yml).
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BUNDLE_ID: com.thenaim.keyloom
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        env:
+          CHECKED_VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          echo "VERSION=$CHECKED_VERSION" >> "$GITHUB_ENV"
+          echo "TAG=v$CHECKED_VERSION" >> "$GITHUB_ENV"
+
+      - name: Select newest Xcode
+        run: |
+          latest="$(find /Applications -maxdepth 1 -name "Xcode_*.app" | sort -V | tail -n 1)"
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+
+      - name: Build Release
+        run: echo "APP=$(scripts/build.sh | tail -n 1)" >> "$GITHUB_ENV"
+
+      # Ad-hoc, designated requirement pinned to the bundle id (same as scripts/install.sh) so a user's
+      # Accessibility grant is not tied to the per-build hash.
+      - name: Ad-hoc sign
+        run: |
+          codesign --force --deep --sign - --preserve-metadata=entitlements,flags \
+            -r="designated => identifier \"$BUNDLE_ID\"" "$APP"
+          codesign --verify --deep --strict "$APP"
+          codesign -d -r- "$APP" 2>&1 | grep -F "identifier \"$BUNDLE_ID\""
+
+      - name: Verify bundle (id, version, macOS 26 minimum)
+        run: |
+          plist="$APP/Contents/Info.plist"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" == "$BUNDLE_ID" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" == "$VERSION" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" == "26.0" ]]
+          exe="$APP/Contents/MacOS/Keyloom"
+          vtool -show-build "$exe" | grep -E "minos 26\.0"
+          lipo -archs "$exe" | grep -qx arm64
+
+      - name: Package
+        run: |
+          mkdir dist
+          ZIP="dist/Keyloom-$VERSION-arm64.zip"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+          (cd dist && shasum -a 256 "Keyloom-$VERSION-arm64.zip" > "Keyloom-$VERSION-arm64.zip.sha256")
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+          echo "SHA256=$(shasum -a 256 "$ZIP" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        run: |
+          prerelease=""
+          [[ "$VERSION" == *-* ]] && prerelease="--prerelease"
+          gh release create "$TAG" "$ZIP" "$ZIP.sha256" \
+            --title "Keyloom $VERSION" --generate-notes --target "$GITHUB_SHA" $prerelease \
+            || gh release upload "$TAG" "$ZIP" "$ZIP.sha256" --clobber
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: tankibaj/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }} # PAT, contents:write on the tap repo only
+          path: tap
+
+      - name: Update cask
+        run: |
+          mkdir -p tap/Casks
+          sed -e "s/@VERSION@/$VERSION/g" -e "s/@SHA256@/$SHA256/g" packaging/homebrew/keyloom.rb > tap/Casks/keyloom.rb
+          ruby -c tap/Casks/keyloom.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/keyloom.rb
+          if git diff --cached --quiet; then echo "cask unchanged"; exit 0; fi
+          git commit -m "keyloom $VERSION"
+          git push
