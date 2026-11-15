@@ -1,0 +1,25 @@
+{
+  "name": "keyloom-video",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts KeyloomFilm out/keyloom.mp4 --codec=h264 --crf=18",
+    "still": "remotion still src/index.ts KeyloomFilm out/poster.png --frame=276",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.543",
+    "@remotion/fonts": "4.0.543",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.543"
+  },
+  "devDependencies": {
+    "@fontsource/inter": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@types/react": "19.1.8",
+    "typescript": "5.8.3"
+  }
+}
