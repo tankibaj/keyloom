@@ -46,3 +46,9 @@ All OS boundaries (permissions, workspace, AX, pasteboard, key posting, tap, hot
 - The UI follows the redesign mocks (menu-bar popover, Settings, library window, editor) and an Apple-Shortcuts-calm look: few toolbar controls over the column they act on (Sort over the list; New/Pin/Duplicate/Delete over the editor), status as a quiet dot + caption (never a toolbar chip), in-pane action bar for Edited/Revert/Save, small gray sidebar icons, symbol-and-color icon picker only (no emoji; old emoji icons fall back to a symbol). Tag colors are device-local (`app.keyloom.tagColors`) and do not sync.
 - Library minimum is 1020x640, default 1180x760 (the toolbar must not fall into the » overflow); Settings is resizable (default ~720x560, min 640x480). Check changes by screenshot at min, ~1100x700 and full screen, light and dark (`LibraryWindowMetrics`).
 - App icon: `Icon/AppIcon.icon` via `tools/make_icon.sh` / `tools/icon_review.sh`; `Icon/` is gitignored globally on some machines, so `git add -f` it if needed. After installing, a stale Dock icon needs `lsregister -f` + `killall Dock`.
+
+## Product film (`video/`)
+- `video/` is the Remotion source of the 30s product film (1920x1080, 60 fps). Render, then `video/scripts/export.sh` (mp4, 25 fps LinkedIn cut, webm, GIF, poster). `video/out/` is gitignored.
+- `video/.gitignore` must keep `!src/lib/`: a global gitignore ignores `lib/`, so without the exception the film source is incomplete in the repo.
+- The README shows the film as `docs/media/keyloom.gif` with the mp4 linked (GitHub does not play a linked mp4 inline).
+- Change the film through the product-film workflow (plan, Naim confirms, build, fresh-context critic). The video stays light-themed; the product flips light and dark.
