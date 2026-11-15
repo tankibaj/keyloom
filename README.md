@@ -1,7 +1,8 @@
 # Keyloom
 
 <p align="center">
-  <a href="docs/media/keyloom.mp4"><img src="docs/media/keyloom-poster.jpg" alt="Keyloom film: you typed this prompt 40 times today. Watch the 30 second film." width="820"></a>
+  <img src="docs/media/keyloom.gif" alt="Keyloom film: you typed this prompt 40 times today." width="820"><br>
+  <a href="docs/media/keyloom.mp4">Watch the 30 second film with sound</a>
 </p>
 
 A macOS menu-bar text expander for the text you retype all day: AI prompts, agent instructions (plan, implement, review, ship), replies and signatures. Type a keyword such as `::review` in any app and Keyloom replaces it with a snippet: rich text, dates, clipboard, prompted arguments and a cursor position. Snippets stay on your Mac; iCloud sync is optional and off by default.
