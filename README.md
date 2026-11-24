@@ -7,6 +7,8 @@
 
 A macOS menu-bar text expander for the text you retype all day: AI prompts, agent instructions (plan, implement, review, ship), replies and signatures. Type a keyword such as `::review` in any app and Keyloom replaces it with a snippet: rich text, dates, clipboard, prompted arguments and a cursor position. Snippets stay on your Mac; iCloud sync is optional and off by default.
 
+[More about Keyloom](https://thenaim.com/projects/keyloom/)
+
 - **Requires** macOS 26 or later, Apple Silicon. Swift 6, no third-party dependencies.
 - **One permission:** Accessibility (no Input Monitoring). Details in [Privacy](#privacy).
 - **Local first:** no account, no telemetry; text never leaves your Mac unless you turn on iCloud sync.
